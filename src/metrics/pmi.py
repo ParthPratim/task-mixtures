@@ -92,10 +92,9 @@ subtask_types, model_paths, dataset_paths = list_all_models_and_datasets(
 NUM_WORKERS = 8
 AVAILABLE_GPUS = [0, 1, 2, 3, 4, 5, 6, 7]
 
-subtask_types, model_paths, dataset_paths = list_all_models_and_datasets()
 
-
-def workload_task_dataset(task, dataset, sh_cache):
+def workload_task_dataset(args):
+    task, dataset, sh_cache = args
     process_id = multiprocessing.current_process()._identity[0]
     assigned_gpu = AVAILABLE_GPUS[process_id % len(AVAILABLE_GPUS)]
 
@@ -132,7 +131,8 @@ def workload_task_dataset(task, dataset, sh_cache):
     )
 
 
-def workload_pmi(task1, task2, sh_cache):
+def workload_pmi(args):
+    task1, task2, sh_cache = args
     if task1 == task2:
         return
 
@@ -162,7 +162,7 @@ with Manager() as manager:
             for task in range(len(model_paths))
             for dataset in range(len(dataset_paths))
         ]
-        print(task_data_pair_loadgen)
+
         task_task_pair_loadgen = [
             (task1, task2, cache_buf)
             for task1 in range(len(model_paths))
