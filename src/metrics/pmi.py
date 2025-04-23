@@ -98,6 +98,7 @@ subtask_types, model_paths, dataset_paths = list_all_models_and_datasets()
 # inter-process cache
 ip_cache = shared_memory.SharedMemory(name="inter-worker-cache", create=True, size=100)
 cache_buf = ip_cache.buf
+cache_bug = {}
 cache_buf["map_task_dataset"] = defaultdict(lambda: defaultdict(list))
 cache_buf["model_tokenizer_cache"] = {}
 cache_buf["dataset_cache"] = {}
