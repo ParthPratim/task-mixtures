@@ -3,6 +3,7 @@ import json
 from dataclasses import dataclass
 from typing import Dict, List
 
+import torch
 from datasets import Dataset
 from torch.nn.utils import rnn
 from transformers import AutoModelForCausalLM, AutoTokenizer, PreTrainedTokenizerBase
