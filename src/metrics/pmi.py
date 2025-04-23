@@ -1,6 +1,6 @@
 import multiprocessing
 from collections import defaultdict
-from multiprocessing import Pool, shared_memory
+from multiprocessing import Manager, Pool
 
 import numpy as np
 import torch
@@ -95,28 +95,10 @@ AVAILABLE_GPUS = [0, 1, 2, 3, 4, 5, 6, 7]
 
 subtask_types, model_paths, dataset_paths = list_all_models_and_datasets()
 
-# inter-process cache
-ip_cache = shared_memory.SharedMemory(name="inter-worker-cache", create=True, size=100)
-cache_buf = ip_cache.buf
-cache_bug = {}
-cache_buf["map_task_dataset"] = defaultdict(lambda: defaultdict(list))
-cache_buf["model_tokenizer_cache"] = {}
-cache_buf["dataset_cache"] = {}
-cache_buf["data_collator"] = None
-cache_buf["similarity_mat"] = np.ones((len(model_paths), len(model_paths)))
 
-buffer_stores = {}
-
-
-def workload_task_dataset(task, dataset):
+def workload_task_dataset(task, dataset, sh_cache):
     process_id = multiprocessing.current_process()._identity[0]
     assigned_gpu = AVAILABLE_GPUS[process_id % len(AVAILABLE_GPUS)]
-    if process_id in buffer_stores:
-        buffer_stores[process_id] = shared_memory.SharedMemory(
-            name="inter-worker-cache"
-        ).buf
-
-    sh_cache = buffer_stores[process_id]
 
     if (task, dataset) not in sh_cache["model_tokenizer_cache"].keys():
         sh_cache["model_tokenizer_cache"][(task, dataset)] = load_model_and_tokenizer(
@@ -151,18 +133,10 @@ def workload_task_dataset(task, dataset):
     )
 
 
-def workload_pmi(task1, task2):
+def workload_pmi(task1, task2, sh_cache):
     if task1 == task2:
         return
 
-    process_id = multiprocessing.current_process()._identity[0]
-
-    if process_id in buffer_stores:
-        buffer_stores[process_id] = shared_memory.SharedMemory(
-            name="inter-worker-cache"
-        ).buf
-
-    sh_cache = buffer_stores[process_id]
     map_task_dataset = sh_cache["map_task_dataset"]
     sh_cache["similarity_mat"][task1, task2] = compute_similarity_score(
         map_task_dataset[task1][task2],
@@ -175,25 +149,26 @@ def workload_pmi(task1, task2):
 """
 Data Parallelism : Run a pool of 8 processes to 
 """
-with Pool(NUM_WORKERS) as pool:
-    task_data_pair_loadgen = [
-        (task, dataset)
-        for task in range(len(model_paths))
-        for dataset in range(len(dataset_paths))
-    ]
-    task_task_pair_loadgen = [
-        (task1, task2)
-        for task1 in range(len(model_paths))
-        for task2 in range(len(model_paths))
-    ]
-    pool.map(workload_task_dataset, task_data_pair_loadgen)
-    pool.map(workload_pmi, task_task_pair_loadgen)
+with Manager() as manager:
+    cache_buf = manager.dict()
+    cache_buf["map_task_dataset"] = defaultdict(lambda: defaultdict(list))
+    cache_buf["model_tokenizer_cache"] = {}
+    cache_buf["dataset_cache"] = {}
+    cache_buf["data_collator"] = None
+    cache_buf["similarity_mat"] = np.ones((len(model_paths), len(model_paths)))
 
+    with Pool(NUM_WORKERS) as pool:
+        task_data_pair_loadgen = [
+            (task, dataset, cache_buf)
+            for task in range(len(model_paths))
+            for dataset in range(len(dataset_paths))
+        ]
+        task_task_pair_loadgen = [
+            (task1, task2, cache_buf)
+            for task1 in range(len(model_paths))
+            for task2 in range(len(model_paths))
+        ]
+        pool.map(workload_task_dataset, task_data_pair_loadgen)
+        pool.map(workload_pmi, task_task_pair_loadgen)
 
-np.save("similarity_mat.npy", cache_buf["similarity_mat"])
-
-for cbuf in buffer_stores.values():
-    cbuf.close()
-
-cache_buf.close()
-cache_buf.unlink()
+    np.save("similarity_mat.npy", cache_buf["similarity_mat"])
