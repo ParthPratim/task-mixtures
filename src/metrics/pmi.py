@@ -1,4 +1,6 @@
+import multiprocessing
 from collections import defaultdict
+from multiprocessing import Pool, shared_memory
 
 import numpy as np
 import torch
@@ -85,42 +87,112 @@ def compute_similarity_score(probs_A_on_B, probs_B_on_B, probs_B_on_A, probs_A_o
     return S_AB.item()
 
 
-subtask_types, model_paths, dataset_paths = list_all_models_and_datasets(checkpoint_folder="checkpoints/full_ft")
-map_task_dataset = defaultdict(lambda: defaultdict(list))
+subtask_types, model_paths, dataset_paths = list_all_models_and_datasets(
+    checkpoint_folder="checkpoints/full_ft"
+)
+NUM_WORKERS = 8
+AVAILABLE_GPUS = [0, 1, 2, 3, 4, 5, 6, 7]
 
-for task in range(len(model_paths)):
-    model, tokenizer = load_model_and_tokenizer(model_paths[task], None)
-    data_collator = DataCollatorForInstructionTuning(tokenizer)
-    for dataset in range(len(dataset_paths)):
-        dataset_path = dataset_paths[dataset]
-        print("Model : ", model_paths[task], "Dataset : " , dataset_path, end  = " = ")
-        d = load_dataset(dataset_path)
-        pd = preprocess_dataset(d, tokenizer, None)
-        train_dataloader = DataLoader(
-            pd,
-            shuffle=False,
-            collate_fn=data_collator,
-            batch_size=3,
-            pin_memory=True,
-            num_workers=8,
+subtask_types, model_paths, dataset_paths = list_all_models_and_datasets()
+
+# inter-process cache
+ip_cache = shared_memory.SharedMemory(name="inter-worker-cache", create=True, size=100)
+cache_buf = ip_cache.buf
+cache_buf["map_task_dataset"] = defaultdict(lambda: defaultdict(list))
+cache_buf["model_tokenizer_cache"] = {}
+cache_buf["dataset_cache"] = {}
+cache_buf["data_collator"] = None
+cache_buf["similarity_mat"] = np.ones((len(model_paths), len(model_paths)))
+
+buffer_stores = {}
+
+
+def workload_task_dataset(task, dataset):
+    process_id = multiprocessing.current_process()._identity[0]
+    assigned_gpu = AVAILABLE_GPUS[process_id % len(AVAILABLE_GPUS)]
+    if process_id in buffer_stores:
+        buffer_stores[process_id] = shared_memory.SharedMemory(
+            name="inter-worker-cache"
+        ).buf
+
+    sh_cache = buffer_stores[process_id]
+
+    if (task, dataset) not in sh_cache["model_tokenizer_cache"].keys():
+        sh_cache["model_tokenizer_cache"][(task, dataset)] = load_model_and_tokenizer(
+            model_paths[task], None
         )
 
-        map_task_dataset[task][dataset] = compute_label_probabilities(
-            model, tokenizer, train_dataloader, "cuda:2"
-        )
-        print("Done")
+    model, tokenizer = sh_cache["model_tokenizer_cache"][(task, dataset)]
 
-similarity_mat = np.ones((len(model_paths), len(model_paths)))
+    if sh_cache["data_collator"] is None:
+        sh_cache["data_collator"] = DataCollatorForInstructionTuning(tokenizer)
 
-for task1 in range(len(model_paths)):
-    for task2 in range(len(model_paths)):
-        if task1 == task2:
-            continue
-        similarity_mat[task1, task2] = compute_similarity_score(
-            map_task_dataset[task1][task2],
-            map_task_dataset[task2][task2],
-            map_task_dataset[task2][task1],
-            map_task_dataset[task1][task1],
-        )
+    data_collator = sh_cache["data_collator"]
 
-np.save("similarity_mat.npy", similarity_mat)
+    if dataset not in sh_cache["dataset_cache"]:
+        sh_cache["dataset_cache"][dataset] = load_dataset(dataset_paths[dataset])
+
+    d = sh_cache["dataset_cache"][dataset]
+
+    pd = preprocess_dataset(d, tokenizer, None)
+
+    train_dataloader = DataLoader(
+        pd,
+        shuffle=False,
+        collate_fn=data_collator,
+        batch_size=3,
+        pin_memory=True,
+        num_workers=8,
+    )
+
+    sh_cache["map_task_dataset"][task][dataset] = compute_label_probabilities(
+        model, tokenizer, train_dataloader, f"cuda:{assigned_gpu}"
+    )
+
+
+def workload_pmi(task1, task2):
+    if task1 == task2:
+        return
+
+    process_id = multiprocessing.current_process()._identity[0]
+
+    if process_id in buffer_stores:
+        buffer_stores[process_id] = shared_memory.SharedMemory(
+            name="inter-worker-cache"
+        ).buf
+
+    sh_cache = buffer_stores[process_id]
+    map_task_dataset = sh_cache["map_task_dataset"]
+    sh_cache["similarity_mat"][task1, task2] = compute_similarity_score(
+        map_task_dataset[task1][task2],
+        map_task_dataset[task2][task2],
+        map_task_dataset[task2][task1],
+        map_task_dataset[task1][task1],
+    )
+
+
+"""
+Data Parallelism : Run a pool of 8 processes to 
+"""
+with Pool(NUM_WORKERS) as pool:
+    task_data_pair_loadgen = [
+        (task, dataset)
+        for task in range(len(model_paths))
+        for dataset in range(len(dataset_paths))
+    ]
+    task_task_pair_loadgen = [
+        (task1, task2)
+        for task1 in range(len(model_paths))
+        for task2 in range(len(model_paths))
+    ]
+    pool.map(workload_task_dataset, task_data_pair_loadgen)
+    pool.map(workload_pmi, task_task_pair_loadgen)
+
+
+np.save("similarity_mat.npy", cache_buf["similarity_mat"])
+
+for cbuf in buffer_stores.values():
+    cbuf.close()
+
+cache_buf.close()
+cache_buf.unlink()
