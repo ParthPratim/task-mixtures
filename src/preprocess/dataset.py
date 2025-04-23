@@ -33,14 +33,12 @@ def load_dataset(dataset_path, splits=["train"]):
 
 
 def load_model_and_tokenizer(model_path, args):
-    model = AutoModelForCausalLM.from_pretaiend(
+    model = AutoModelForCausalLM.from_pretrained(
         model_path,
-        torch_dtype=TORCH_DTYPE[args.torch_dtype],
-        cache_dir=args.cache_dir,
-        token=args.hf_access_token,
+        torch_dtype="bfloat16"
     )
     tokenizer = AutoTokenizer.from_pretrained(
-        model_path, cache_dir=args.cache_dir, token=args.hf_access_token
+        model_path
     )
     return model, tokenizer
 

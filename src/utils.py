@@ -17,7 +17,7 @@ def list_all_models_and_datasets(
             model_paths.append(os.path.join(checkpoint_folder, ckpt))
             prefix_len = len(f"result_{model}_")
             sub_task_name = ckpt[prefix_len : ckpt.find("-")]
-            dataset_paths.append(os.path.join("data", sub_task_name, ckpt[prefix_len:]))
+            dataset_paths.append(os.path.join("data", sub_task_name, ckpt[prefix_len:]) + ".json")
             subtask_type.append(sub_task_name)
 
     if info:

@@ -85,15 +85,15 @@ def compute_similarity_score(probs_A_on_B, probs_B_on_B, probs_B_on_A, probs_A_o
     return S_AB.item()
 
 
-subtask_types, model_paths, dataset_paths = list_all_models_and_datasets()
-
+subtask_types, model_paths, dataset_paths = list_all_models_and_datasets(checkpoint_folder="checkpoints/full_ft")
 map_task_dataset = defaultdict(lambda: defaultdict(list))
 
 for task in range(len(model_paths)):
-    model, tokenizer = load_model_and_tokenizer(model_paths[task])
+    model, tokenizer = load_model_and_tokenizer(model_paths[task], None)
     data_collator = DataCollatorForInstructionTuning(tokenizer)
     for dataset in range(len(dataset_paths)):
         dataset_path = dataset_paths[dataset]
+        print("Model : ", model_paths[task], "Dataset : " , dataset_path, end  = " = ")
         d = load_dataset(dataset_path)
         pd = preprocess_dataset(d, tokenizer, None)
         train_dataloader = DataLoader(
@@ -108,7 +108,7 @@ for task in range(len(model_paths)):
         map_task_dataset[task][dataset] = compute_label_probabilities(
             model, tokenizer, train_dataloader, "cuda:2"
         )
-
+        print("Done")
 
 similarity_mat = np.ones((len(model_paths), len(model_paths)))
 
