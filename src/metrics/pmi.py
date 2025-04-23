@@ -1,5 +1,4 @@
 import multiprocessing
-from collections import defaultdict
 from multiprocessing import Manager, Pool
 
 import numpy as np
@@ -128,7 +127,7 @@ def workload_task_dataset(task, dataset, sh_cache):
         num_workers=8,
     )
 
-    sh_cache["map_task_dataset"][task][dataset] = compute_label_probabilities(
+    sh_cache["map_task_dataset"][(task, dataset)] = compute_label_probabilities(
         model, tokenizer, train_dataloader, f"cuda:{assigned_gpu}"
     )
 
@@ -139,10 +138,10 @@ def workload_pmi(task1, task2, sh_cache):
 
     map_task_dataset = sh_cache["map_task_dataset"]
     sh_cache["similarity_mat"][task1, task2] = compute_similarity_score(
-        map_task_dataset[task1][task2],
-        map_task_dataset[task2][task2],
-        map_task_dataset[task2][task1],
-        map_task_dataset[task1][task1],
+        map_task_dataset[(task1, task2)],
+        map_task_dataset[(task2, task2)],
+        map_task_dataset[(task2, task1)],
+        map_task_dataset[(task1, task1)],
     )
 
 
@@ -151,7 +150,7 @@ Data Parallelism : Run a pool of 8 processes to
 """
 with Manager() as manager:
     cache_buf = manager.dict()
-    cache_buf["map_task_dataset"] = defaultdict(lambda: defaultdict(list))
+    cache_buf["map_task_dataset"] = {}
     cache_buf["model_tokenizer_cache"] = {}
     cache_buf["dataset_cache"] = {}
     cache_buf["data_collator"] = None
