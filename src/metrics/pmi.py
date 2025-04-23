@@ -167,9 +167,10 @@ with Manager() as manager:
         progressbar.AnimatedMarker(),
     ]
     widgets2 = ["Calculating PMI Score : ", progressbar.AnimatedMarker()]
+
     n = len(model_paths)
-    bar1 = progressbar.ProgressBar(widgets=widgets1, max_value=n * n).start()
-    bar2 = progressbar.ProgressBar(widgets=widgets2, max_value=n * n).start()
+
+    bar1 = progressbar.ProgressBar(widgets=widgets1, maxval=n * n).start()
 
     with Pool(NUM_WORKERS) as pool:
         task_data_pair_loadgen = [
@@ -184,6 +185,9 @@ with Manager() as manager:
             for task2 in range(len(model_paths))
         ]
         pool.starmap(workload_task_dataset, task_data_pair_loadgen)
+
+        bar2 = progressbar.ProgressBar(widgets=widgets2, maxval=n * n).start()
+
         pool.starmap(workload_pmi, task_task_pair_loadgen)
 
     np.save("similarity_mat.npy", cache_buf["similarity_mat"])
