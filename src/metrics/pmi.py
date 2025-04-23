@@ -1,90 +1,21 @@
-import copy
-import json
-import sys
+from collections import defaultdict
 
+import numpy as np
 import torch
 import torch.nn.functional as F
-from datasets import Dataset
+from torch.utils.data import DataLoader
 from tqdm import tqdm
-from transformers import AutoModelForCausalLM
 
-from src.constants import IGNORE_INDEX
-
-"""
-Returns back array of data samples
-[
-    {
-        "inputs" : "",
-        "targets" : ""
-    }
-]
-"""
-
-
-def load_dataset(dataset_path, splits=["train"]):
-    with open(dataset_path, "r") as f:
-        data = json.load(f)
-
-    combined_data = []
-    for split in splits:
-        combined_data.extend(data[split])
-
-    return Dataset.from_list(combined_data)
-
-
-def load_model_amd_tokenizer(model_path, args):
-    model = AutoModelForCausalLM.from_pretaiend(
-        model_path,
-        torch_dtype=TORCH_DTYPES[args.torch_dtype],
-        cache_dir=args.cache_dir,
-        token=args.hf_access_token,
-    )
-    tokenizer = AutoModelForCausalLM.from_pretrained(
-        model_path, cache_dir=args.cache_dir, token=args.hf_access_token
-    )
-    return model, tokenizer
-
-
-def preprocess_dataset(raw_dataset, tokenizer, args, max_seq_length=4096):
-    raw_dataset_column_names = raw_dataset.column_names
-
-    def preprocess_function(examples):
-        prompts_responses = [
-            p + " " + r for p, r in zip(examples["inputs"], examples["targets"])
-        ]
-        prompts_responses_tokenized = tokenizer(
-            prompts_responses, truncation=True, max_length=max_seq_length
-        )
-        prompts_tokenized = tokenizer(
-            examples["inputs"], truncation=True, max_length=max_seq_length
-        )
-        all_labels = copy.deepcopy(prompts_responses_tokenized["input_ids"])
-        prompts_len = [len(prompt) for prompt in prompts_tokenized["input_ids"]]
-        for labels, prompt_len in zip(all_labels, prompts_len):
-            labels[:prompt_len] = [IGNORE_INDEX] * prompt_len
-        result = {k: v for k, v in prompts_responses_tokenized.items()}
-        result["labels"] = all_labels
-        return result
-
-    return raw_dataset.map(
-        preprocess_function,
-        batched=True,
-        num_proc=12,  # args.preprocessing_num_workers,
-        load_from_cache_file=False,  # not args.overwrite_cache,
-        remove_columns=raw_dataset_column_names,
-        desc="Preprocessing the raw dataset",
-    )
+from src.preprocess.dataset import (
+    DataCollatorForInstructionTuning,
+    load_dataset,
+    load_model_and_tokenizer,
+    preprocess_dataset,
+)
+from src.utils import list_all_models_and_datasets
 
 
 # test dataset name :  t0-task-sciq_Multiple_Choice.json
-
-d = load_dataset("data/t0/t0-task-sciq_Multiple_Choice.json")
-model, tokenizer = load_model_amd_tokenizer(
-    "models_ft/result_gpt2_t0-task-sciq_Multiple_Choice"
-)
-print(preprocess_dataset(d, tokenizer, None))
-
-
 def compute_label_probabilities(
     model,
     tokenizer,
@@ -103,34 +34,18 @@ def compute_label_probabilities(
 
     with torch.no_grad():
         for sample in tqdm(dataset, desc="Computing label probabilities"):
-            inputs = tokenizer(
-                sample[text_field], return_tensors="pt", padding=True, truncation=True
-            ).to(device)
-            input_ids = inputs["input_ids"]
-            prompt_ids = tokenizer(text_field, return_tensors="pt")["input_ids"].to(
-                device
-            )
-            prompt_len = min(prompt_ids.shape[1], input_ids.shape[1])
-
-            label_token_ids = input_ids[0, prompt_len:]
-
-            logits = model(**inputs).logits
-
-            label_logits = logits[0, prompt_len - 1 : -1]
-
-            probs = F.softmax(logits, dim=-1)
-            token_probs = probs[range(len(label_token_ids)), label_token_ids]
-
-            clamped_probs = token_probs.clamp(min=epsilon)
-
-            label = sample[label_field]
-
-            log_prob = torch.sum(torch.log(clamped_probs))
-            avg_log_prob = log_prob / len(label_token_ids)
-
-            print(avg_log_prob)
-            sys.exit(1)
-            label_probs.append(avg_log_prob.exp().item())
+            labels = sample["labels"]
+            valid_mask = labels != -100
+            output = model(**sample)
+            logits = output.logits
+            log_probs = F.log_softmax(logits, dim=-1)
+            safe_labels = torch.where(valid_mask, labels, torch.zeros_like(labels))
+            selected_log_probs = log_probs.gather(
+                dim=2, index=safe_labels.unsqueeze(-1)
+            ).squeeze(-1)
+            selected_log_probs = selected_log_probs * valid_mask
+            total_log_probs = selected_log_probs.sum(dim=1)
+            label_probs.extend(total_log_probs.exp())
 
     return label_probs
 
@@ -168,3 +83,44 @@ def compute_similarity_score(probs_A_on_B, probs_B_on_B, probs_B_on_A, probs_A_o
 
     S_AB = 0.5 * (term1 + term2)
     return S_AB.item()
+
+
+subtask_types, model_paths, dataset_paths = list_all_models_and_datasets()
+
+map_task_dataset = defaultdict(lambda: defaultdict(list))
+
+for task in range(len(model_paths)):
+    model, tokenizer = load_model_and_tokenizer(model_paths[task])
+    data_collator = DataCollatorForInstructionTuning(tokenizer)
+    for dataset in range(len(dataset_paths)):
+        dataset_path = dataset_paths[dataset]
+        d = load_dataset(dataset_path)
+        pd = preprocess_dataset(d, tokenizer, None)
+        train_dataloader = DataLoader(
+            pd,
+            shuffle=False,
+            collate_fn=data_collator,
+            batch_size=3,
+            pin_memory=True,
+            num_workers=8,
+        )
+
+        map_task_dataset[task][dataset] = compute_label_probabilities(
+            model, tokenizer, train_dataloader, "cuda:2"
+        )
+
+
+similarity_mat = np.ones((len(model_paths), len(model_paths)))
+
+for task1 in range(len(model_paths)):
+    for task2 in range(len(model_paths)):
+        if task1 == task2:
+            continue
+        similarity_mat[task1, task2] = compute_similarity_score(
+            map_task_dataset[task1][task2],
+            map_task_dataset[task2][task2],
+            map_task_dataset[task2][task1],
+            map_task_dataset[task1][task1],
+        )
+
+np.save("similarity_mat.npy", similarity_mat)
