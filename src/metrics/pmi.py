@@ -2,10 +2,10 @@ import multiprocessing
 from multiprocessing import Manager, Pool
 
 import numpy as np
+import progressbar
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-from tqdm import tqdm
 
 from src.preprocess.dataset import (
     DataCollatorForInstructionTuning,
@@ -34,7 +34,7 @@ def compute_label_probabilities(
     label_probs = []
 
     with torch.no_grad():
-        for sample in tqdm(dataset, desc="Computing label probabilities"):
+        for sample in dataset:
             labels = sample["labels"]
             valid_mask = labels != -100
             output = model(**sample)
@@ -89,21 +89,21 @@ def compute_similarity_score(probs_A_on_B, probs_B_on_B, probs_B_on_A, probs_A_o
 subtask_types, model_paths, dataset_paths = list_all_models_and_datasets(
     checkpoint_folder="checkpoints/full_ft"
 )
+
 NUM_WORKERS = 8
 AVAILABLE_GPUS = [0, 1, 2, 3, 4, 5, 6, 7]
 
 
-def workload_task_dataset(task, dataset, sh_cache):
+def workload_task_dataset(task, dataset, sh_cache, bar1):
     process_id = multiprocessing.current_process()._identity[0]
     assigned_gpu = AVAILABLE_GPUS[process_id % len(AVAILABLE_GPUS)]
 
-    if (task, dataset) not in sh_cache["model_tokenizer_cache"].keys():
-        model, tokenizer = sh_cache["model_tokenizer_cache"][(task, dataset)] = (
+    if task not in sh_cache["model_tokenizer_cache"].keys():
+        model, tokenizer = sh_cache["model_tokenizer_cache"][task] = (
             load_model_and_tokenizer(model_paths[task], None)
         )
-
     else:
-        model, tokenizer = sh_cache["model_tokenizer_cache"][(task, dataset)]
+        model, tokenizer = sh_cache["model_tokenizer_cache"][task]
 
     if sh_cache["data_collator"] is None:
         data_collator = sh_cache["data_collator"] = DataCollatorForInstructionTuning(
@@ -132,10 +132,12 @@ def workload_task_dataset(task, dataset, sh_cache):
     sh_cache["map_task_dataset"][(task, dataset)] = compute_label_probabilities(
         model, tokenizer, train_dataloader, f"cuda:{assigned_gpu}"
     )
+    bar1.update(1)
 
 
-def workload_pmi(task1, task2, sh_cache):
+def workload_pmi(task1, task2, sh_cache, bar2):
     if task1 == task2:
+        bar2.update(1)
         return
 
     map_task_dataset = sh_cache["map_task_dataset"]
@@ -145,6 +147,8 @@ def workload_pmi(task1, task2, sh_cache):
         map_task_dataset[(task2, task1)],
         map_task_dataset[(task1, task1)],
     )
+
+    bar2.update(1)
 
 
 """
@@ -158,15 +162,24 @@ with Manager() as manager:
     cache_buf["data_collator"] = None
     cache_buf["similarity_mat"] = np.ones((len(model_paths), len(model_paths)))
 
+    widgets1 = [
+        "Calculating Per Task Probability Score : ",
+        progressbar.AnimatedMarker(),
+    ]
+    widgets2 = ["Calculating PMI Score : ", progressbar.AnimatedMarker()]
+    n = len(model_paths)
+    bar1 = progressbar.ProgressBar(widgets=widgets1, max_value=n * n).start()
+    bar2 = progressbar.ProgressBar(widgets=widgets2, max_value=n * n).start()
+
     with Pool(NUM_WORKERS) as pool:
         task_data_pair_loadgen = [
-            (task, dataset, cache_buf)
+            (task, dataset, cache_buf, bar1)
             for task in range(len(model_paths))
             for dataset in range(len(dataset_paths))
         ]
 
         task_task_pair_loadgen = [
-            (task1, task2, cache_buf)
+            (task1, task2, cache_buf, bar2)
             for task1 in range(len(model_paths))
             for task2 in range(len(model_paths))
         ]
