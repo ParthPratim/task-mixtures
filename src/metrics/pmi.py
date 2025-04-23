@@ -162,6 +162,7 @@ with Manager() as manager:
             for task in range(len(model_paths))
             for dataset in range(len(dataset_paths))
         ]
+        print(task_data_pair_loadgen)
         task_task_pair_loadgen = [
             (task1, task2, cache_buf)
             for task1 in range(len(model_paths))
