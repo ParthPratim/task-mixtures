@@ -179,14 +179,15 @@ with Manager() as manager:
             for dataset in range(len(dataset_paths))
         ]
 
+        pool.starmap(workload_task_dataset, task_data_pair_loadgen)
+
+        bar2 = progressbar.ProgressBar(widgets=widgets2, maxval=n * n).start()
+
         task_task_pair_loadgen = [
             (task1, task2, cache_buf, bar2)
             for task1 in range(len(model_paths))
             for task2 in range(len(model_paths))
         ]
-        pool.starmap(workload_task_dataset, task_data_pair_loadgen)
-
-        bar2 = progressbar.ProgressBar(widgets=widgets2, maxval=n * n).start()
 
         pool.starmap(workload_pmi, task_task_pair_loadgen)
 
