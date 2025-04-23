@@ -93,27 +93,30 @@ NUM_WORKERS = 8
 AVAILABLE_GPUS = [0, 1, 2, 3, 4, 5, 6, 7]
 
 
-def workload_task_dataset(args):
-    task, dataset, sh_cache = args
+def workload_task_dataset(task, dataset, sh_cache):
     process_id = multiprocessing.current_process()._identity[0]
     assigned_gpu = AVAILABLE_GPUS[process_id % len(AVAILABLE_GPUS)]
 
     if (task, dataset) not in sh_cache["model_tokenizer_cache"].keys():
-        sh_cache["model_tokenizer_cache"][(task, dataset)] = load_model_and_tokenizer(
-            model_paths[task], None
+        model, tokenizer = sh_cache["model_tokenizer_cache"][(task, dataset)] = (
+            load_model_and_tokenizer(model_paths[task], None)
         )
 
-    model, tokenizer = sh_cache["model_tokenizer_cache"][(task, dataset)]
+    else:
+        model, tokenizer = sh_cache["model_tokenizer_cache"][(task, dataset)]
 
     if sh_cache["data_collator"] is None:
-        sh_cache["data_collator"] = DataCollatorForInstructionTuning(tokenizer)
-
-    data_collator = sh_cache["data_collator"]
+        data_collator = sh_cache["data_collator"] = DataCollatorForInstructionTuning(
+            tokenizer
+        )
+    else:
+        data_collator = sh_cache["data_collator"]
 
     if dataset not in sh_cache["dataset_cache"]:
-        sh_cache["dataset_cache"][dataset] = load_dataset(dataset_paths[dataset])
+        d = sh_cache["dataset_cache"][dataset] = load_dataset(dataset_paths[dataset])
 
-    d = sh_cache["dataset_cache"][dataset]
+    else:
+        d = sh_cache["dataset_cache"][dataset]
 
     pd = preprocess_dataset(d, tokenizer, None)
 
@@ -131,8 +134,7 @@ def workload_task_dataset(args):
     )
 
 
-def workload_pmi(args):
-    task1, task2, sh_cache = args
+def workload_pmi(task1, task2, sh_cache):
     if task1 == task2:
         return
 
@@ -168,7 +170,7 @@ with Manager() as manager:
             for task1 in range(len(model_paths))
             for task2 in range(len(model_paths))
         ]
-        pool.map(workload_task_dataset, task_data_pair_loadgen)
-        pool.map(workload_pmi, task_task_pair_loadgen)
+        pool.starmap(workload_task_dataset, task_data_pair_loadgen)
+        pool.starmap(workload_pmi, task_task_pair_loadgen)
 
     np.save("similarity_mat.npy", cache_buf["similarity_mat"])
