@@ -23,6 +23,7 @@ RUN pip install ipykernel
 RUN pip install -U pip setuptools wheel
 RUN pip install wandb
 RUN pip install bitsandbytes==0.44.0
+RUN pip install vllm
 
 RUN apt-get -y install apt-utils sudo
 RUN git config --global user.name "Parth Pratim Chatterjee"
