@@ -25,7 +25,7 @@ RUN pip install wandb
 RUN pip install bitsandbytes==0.44.0
 
 RUN apt-get -y install apt-utils sudo
-git config --global user.name "Parth Pratim Chatterjee"
-git config --global user.email "parth27official@gmail.com"
-git config --global --add safe.directory '*'
+RUN git config --global user.name "Parth Pratim Chatterjee"
+RUN git config --global user.email "parth27official@gmail.com"
+RUN git config --global --add safe.directory '*'
 
