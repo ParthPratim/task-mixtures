@@ -1,0 +1,7 @@
+Groups,Version,Filter,n-shot,Metric,Value,Stderr
+------------------,------:,------,------,------,---,-----:,---,-----:
+mmlu,2,none,acc,↑,0.4731,±,0.0040
+- humanities,2,none,acc,↑,0.4525,±,0.0069
+- other,2,none,acc,↑,0.5356,±,0.0087
+- social sciences,2,none,acc,↑,0.5463,±,0.0088
+- stem,2,none,acc,↑,0.3708,±,0.0084
