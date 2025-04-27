@@ -1,4 +1,5 @@
 checkpoints
+tmp
 data
 git_setup.sh
 *.pyc
