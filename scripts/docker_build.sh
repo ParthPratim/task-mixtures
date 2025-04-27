@@ -1,1 +1,1 @@
-docker build -t parthpratim27/smart-repmatch .
+docker build -t parthpratim27/data-mixtures .

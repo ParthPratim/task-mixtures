@@ -28,7 +28,7 @@ run_task() {
 
     echo "Fine-Tuning for task : $1" >>$LOG_FILE
 
-    accelerate launch --config_file config.yaml instruction_tuner.py \
+    accelerate launch --config_file configs/acc_tuner_config.yaml src/instruction_tuner.py \
         --dataset_name_or_path $2 \
         --model_name_or_path $MODEL_NAME_OR_PATH \
         --load_data_from_disk \
@@ -39,11 +39,11 @@ run_task() {
         --per_device_train_batch_size 32 \
         --per_device_eval_batch_size 32 \
         --preprocessing_num_workers 12 \
-	--use_peft \
-	--peft_lora_r 8 \
-	--peft_lora_alpha 32 \
-	--peft_lora_dropout 0.1 \
-	--peft_target_modules c_proj,c_attn \
+        --use_peft \
+        --peft_lora_r 8 \
+        --peft_lora_alpha 32 \
+        --peft_lora_dropout 0.1 \
+        --peft_target_modules c_proj,c_attn \
         --seed 23 \
         --num_train_epochs 10 \
         --gradient_accumulation_steps 1 \
@@ -66,13 +66,13 @@ run_task() {
 }
 
 for t0_task_name in data/t0/*.json; do
-    
+
     base_name=$(basename "$t0_task_name")
     task_name=${base_name%.json}
     output_dir=$(echo -e "models/result_${MODEL_NAME_OR_PATH}_${task_name}")
     if [ -d "$output_dir" ]; then
-        echo "Skipping, since already done : $output_dir" >> $LOG_FILE
-	continue
+        echo "Skipping, since already done : $output_dir" >>$LOG_FILE
+        continue
     fi
     run_task $task_name $t0_task_name $output_dir $MAX_RETRIES
 done

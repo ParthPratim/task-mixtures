@@ -28,7 +28,7 @@ run_task() {
 
     echo "Fine-Tuning for task : $1" >>$LOG_FILE
 
-    accelerate launch --config_file config_apr27.yaml instruction_tuner.py \
+    accelerate launch --config_file configs/acc_tuner_config.yaml src/instruction_tuner.py \
         --dataset_name_or_path $2 \
         --model_name_or_path $MODEL_NAME_OR_PATH \
         --load_data_from_disk \
@@ -66,4 +66,3 @@ task_name=${base_name%.json}
 output_dir=$(echo -e "models_llama/result_${MODEL_NAME_OR_PATH}_${task_name}")
 
 run_task $task_name $t0_task_name $output_dir $MAX_RETRIES
-
