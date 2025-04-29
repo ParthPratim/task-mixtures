@@ -1,12 +1,12 @@
 import gc
 import os
+from copy import deepcopy
 
 import multiprocess as mp
 import numpy as np
 import torch
 from multiprocess import Pool
 from torch.utils.data import DataLoader
-from tqdm import tqdm
 
 from src.preprocess.dataset import (
     DataCollatorForInstructionTuning,
@@ -40,7 +40,7 @@ def compute_label_probabilities(
     label_probs = []
     sampling_params = SamplingParams(prompt_logprobs=0, max_tokens=1)
 
-    for sample in tqdm(dataset):
+    for sample in dataset:
         batch_input_ids = []
         batch_labels = sample["labels"]
         for input_ids in sample["input_ids"]:
@@ -48,7 +48,9 @@ def compute_label_probabilities(
                 TokensPrompt(prompt_token_ids=input_ids)
             )  # shape = (batches, seq_length)
 
-        outputs = llm.generate(batch_input_ids, sampling_params=sampling_params)
+        outputs = llm.generate(
+            batch_input_ids, sampling_params=sampling_params, use_tqdm=False
+        )
 
         for i, output in enumerate(outputs):
             total_log_prob = 0
@@ -97,11 +99,13 @@ def compute_similarity_score(probs_A_on_B, probs_B_on_B, probs_B_on_A, probs_A_o
     return S_AB.item()
 
 
-AVAILABLE_GPUS = [2, 3, 6, 7]
+AVAILABLE_GPUS = [1, 2, 3, 4, 6, 7]
 
 
-def worker_task_dataset(task, n, dataset_loaders, model_paths, map_task_dataset):
+def worker_task_dataset(args):
+    task, n, _dataset_loaders, model_paths, map_task_dataset = args
     process_id = mp.current_process()._identity[0]
+    dataset_loaders = _dataset_loaders[process_id % len(AVAILABLE_GPUS)]
     device = AVAILABLE_GPUS[process_id % len(AVAILABLE_GPUS)]
 
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -109,11 +113,20 @@ def worker_task_dataset(task, n, dataset_loaders, model_paths, map_task_dataset)
     os.environ["CUDA_VISIBLE_DEVICES"] = str(device)
 
     llm, tokenizer = load_vllm_model_and_tokenizer(model_paths[task])
+
     for dataset in range(n):
+        if os.path.exists(f"pairwise_npy/prob_arr_{task}-{dataset}.npy"):
+            map_task_dataset[(task, dataset)] = np.load(
+                f"pairwise_npy/prob_arr_{task}-{dataset}.npy"
+            )
+            print(f"Loaded {task}-{dataset}")
+            continue
+
         pd = dataset_loaders[dataset]
-        map_task_dataset[(task, dataset)] = compute_label_probabilities(
-            llm, tokenizer, pd
-        )
+        tmp_probs = compute_label_probabilities(llm, tokenizer, pd)
+        map_task_dataset[(task, dataset)] = tmp_probs
+        np.save(f"pairwise_npy/prob_arr_{task}-{dataset}.npy", np.array(tmp_probs))
+        print(f"Done {task}-{dataset}")
 
     destroy_model_parallel()
     destroy_distributed_environment()
@@ -139,77 +152,68 @@ if __name__ == "__main__":
 
     # model_paths=model_paths[:4]
     # dataset_paths=dataset_paths[:10]
-    os.environ["CUDA_VISIBLE_DEVICES"] = "6"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "2"
     os.environ["TOKENIZERS_PARALLELISM"] = "false"
     dataset_loaders = {}
     llm, tokenizer = load_vllm_model_and_tokenizer(model_paths[0])
     data_collator = DataCollatorForInstructionTuning(tokenizer)
-
-    for dataset in range(len(dataset_paths)):
+    # dataset_loaders = manager.dict()
+    workers = len(AVAILABLE_GPUS)
+    per_process_dataset_loaders = [{}] * workers
+    for dataset in range(n):
         d = load_dataset(dataset_paths[dataset], splits=["validation"])
         pd1 = preprocess_dataset(d, tokenizer, None)
-        dataset_loaders[dataset] = DataLoader(
-            pd1,
-            shuffle=False,
-            collate_fn=data_collator,
-            batch_size=8,
-            pin_memory=True,
-            num_workers=8,
-        )
-
-    del llm.llm_engine.model_executor.driver_worker
-    del llm
-    del tokenizer
-    gc.collect()
-    torch.cuda.empty_cache()
-    torch.distributed.destroy_process_group()
-    import ray
-
-    ray.shutdown()
+        for i in range(workers):
+            per_process_dataset_loaders[i][dataset] = DataLoader(
+                pd1,
+                shuffle=False,
+                pin_memory=True,
+                collate_fn=data_collator,
+                batch_size=1024,
+                num_workers=8,
+            )
 
     process_pool = []
-    workers = len(AVAILABLE_GPUS)
+
     task_batch_size = n // workers
+
+    for i in range(workers):
+        per_process_dataset_loaders.append(deepcopy(dataset_loaders))
 
     with mp.Manager() as manager:
         map_task_dataset = manager.dict()
+
+        del llm.llm_engine.model_executor.driver_worker
+        del llm
+        del tokenizer
+        gc.collect()
+        torch.cuda.empty_cache()
+        torch.distributed.destroy_process_group()
+        import ray
+
+        ray.shutdown()
+
         workload_tasks = [
-            (task, n, dataset_loaders, model_paths, map_task_dataset)
+            (task, n, per_process_dataset_loaders, model_paths, map_task_dataset)
             for task in range(n)
         ]
         with Pool(workers) as pool:
-            pool.starmap(worker_task_dataset, workload_tasks)
+            pool.imap_unordered(worker_task_dataset, workload_tasks)
             pool.close()
             pool.join()
 
-        """
-        for i, gpu in enumerate(AVAILABLE_GPUS):
-            p = Process(target=worker_task_dataset, 
-                    args=(range(task_batch_size*i, task_batch_size*(i+1) if i < workers-1 else n),
-                        n,
-                        dataset_loaders, 
-                        model_paths, 
-                        map_task_dataset,
-                        gpu))
-
-            p.daemon = False
-            p.start()
-            process_pool.append(p)
-
-        # Wait for all inference to finish
-        for p in process_pool:
-            p.join()
-        """
-
-        sim_mat = np.zeros((n, n))
+        sim_mat = np.ones((n, n))
 
         for task1 in range(n):
-            for task2 in range(task1 + 1, n):
-                sim_mat[task1, task2] = compute_similarity_score(
-                    map_task_dataset[(task1, task2)],
-                    map_task_dataset[(task2, task2)],
-                    map_task_dataset[(task2, task1)],
-                    map_task_dataset[(task1, task1)],
-                )
+            for task2 in range(task1, n):
+                try:
+                    sim_mat[task1, task2] = compute_similarity_score(
+                        map_task_dataset[(task1, task2)],
+                        map_task_dataset[(task2, task2)],
+                        map_task_dataset[(task2, task1)],
+                        map_task_dataset[(task1, task1)],
+                    )
+                except:
+                    print(f"Skipping {task1}-{task2}")
         # print(sim_mat)
         np.save("mp_similarity_mat_pmi.py", sim_mat)
