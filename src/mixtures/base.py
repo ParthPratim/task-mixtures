@@ -21,6 +21,7 @@ class DataMixture(ABC):
         subtask_metas: List[TaskMeta],
         num_instances: int,
         mixture_name=None,
+        task_prob=None,
     ):
         if mixture_name is None:
             #  Add code to use date-time combination to create a name
@@ -34,7 +35,7 @@ class DataMixture(ABC):
         self.mixture_ready = False
         self.final_mixture = None
         self.num_instances = num_instances
-        self.task_prob = None  # shape : (self.num_tasks, )
+        self.task_prob = task_prob  # shape : (self.num_tasks, )
 
     @abstractmethod
     def create_mixture(self) -> bool:
