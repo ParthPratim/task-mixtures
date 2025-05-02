@@ -16,13 +16,15 @@ from src.preprocess.dataset import load_dataset
 def process_job(args):
     prefix, subtask, idx = args
     train_instances = list(
-        load_dataset(os.path.join(prefix, subtask), splits=["train"])
+        load_dataset(os.path.join(prefix, subtask), splits=["validation"])
     )
     return TaskMeta(subtask, train_split=train_instances)
 
 
 def load_general_tasks(
-    use_orderring=False, orderring_file="data/task_index_map.csv", num_proc=2
+    use_orderring=True,
+    orderring_file="artifacts/task-index-maps/2epochs-t0-flan2021-cot.csv",
+    num_proc=2,
 ):
     mixture_folders = ["data/t0", "data/flan2021", "data/cot"]
     subtask_jsons = []
@@ -47,7 +49,7 @@ def load_general_tasks(
         subtask_metas = list(tqdm(pool.imap(process_job, workload), total=i))
 
     if use_orderring:
-        order = pd.read_csv("data/task_index_map.csv")
+        order = pd.read_csv(orderring_file)
         prefix = "result_gpt2_"
         for index, row in order.iterrows():
             task_name = row["Task-Name"][len(prefix) :]
@@ -83,11 +85,10 @@ def experiment_1(NUM_INSTANCES=25000):
         subtasks_list,
         subtask_metas,
         NUM_INSTANCES,
-        "25K-uniform-t0-flan2021-cot-all-full",
+        "artifacts/final-submixtures/25K-uniform-t0-flan2021-cot-all-full",
     )
 
     uniform.create_mixture()
-    print("hel")
     uniform.dump_mixture(f"{uniform.mixture_name}.json")
 
 
@@ -114,7 +115,7 @@ def experiment_2(sim_npy="data/sim_mat.npy", NUM_INSTANCES=25000):
         subtasks_list,
         subtask_metas,
         NUM_INSTANCES,
-        "25K-closed-form-multinomial-to-flan2021-cot",
+        "artifacts/final-submixtures/25K-closed-form-multinomial-to-flan2021-cot",
         task_prob=task_prob,
     )
 
@@ -140,13 +141,11 @@ def experiment_3(sim_npy="data/sim_mat.npy", NUM_INSTANCES=25000):
     bp = BeliefPropagation(S)
     task_prob = bp.compute_task_probability()
 
-    print(task_prob.shape)
-
     multinomial = Multinomial(
         subtasks_list,
         subtask_metas,
         NUM_INSTANCES,
-        "25K-belief-prop-multinomial-to-flan2021-cot",
+        "artifacts/final-submixtures/25K-belief-prop-multinomial-to-flan2021-cot",
         task_prob=task_prob,
     )
 

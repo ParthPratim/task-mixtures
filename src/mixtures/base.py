@@ -45,8 +45,6 @@ class DataMixture(ABC):
         return self.final_mixture
 
     def dump_mixture(self, filename):
-        print(self.final_mixture.train_split)
-
         with open(filename, "w") as f:
             json.dump(
                 {

@@ -13,7 +13,7 @@ class BeliefPropagation(TaskProbabilityOptimization):
         unary_pot = _beta * S.sum(axis=1)
 
         # Pairwise potentials with regularization
-        pairwise_pot = _lambda * S + mu * np.eye(n)
+        pairwise_pot = _lambda * S
 
         # Initialize messages: m_{i → j}
         messages = np.zeros((n, n))

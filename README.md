@@ -12,6 +12,26 @@ bash scripts/docker_run.sh
 ```
 
 
+## Directory Structure & Naming Convention
+
+The struture of the root should be the following
+```bash
+|- checkpoints
+    |- full_ft
+        |- ...
+        |- result_gpt2_<subtask-name>-<json-file-name-without-dot-json-extension>
+        |- ...
+
+|- data
+    |- <subtask-name>
+        |-<subtask-name>-<json-file-name-without-dot-json-extension>.json
+    |- to
+        |- ...
+    |-flan2021
+        |- ...
+```
+
+
 ## Run a Finetuning Experiment
 ### T0 Fine-Tuning over GPT2 (Use this as a base to build scripts for other tasks as well)
 ```bash
