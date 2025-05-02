@@ -31,7 +31,6 @@ class DataMixture(ABC):
         self.subtask_list = subtask_list
         self.subtask_metas = subtask_metas
         self.num_tasks = len(subtask_list) if subtask_list else 0
-        print(subtask_list)
         self.mixture_ready = False
         self.final_mixture = None
         self.num_instances = num_instances

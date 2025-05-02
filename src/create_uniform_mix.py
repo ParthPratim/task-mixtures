@@ -1,10 +1,8 @@
 import multiprocessing as mp
 import os
-from multiprocessing import Pool
 
 import numpy as np
 import pandas as pd
-from tqdm import tqdm
 
 from src.mixtures.base import TaskMeta
 from src.mixtures.uniform import Multinomial, Uniform
@@ -16,8 +14,9 @@ from src.preprocess.dataset import load_dataset
 def process_job(args):
     prefix, subtask, idx = args
     train_instances = list(
-        load_dataset(os.path.join(prefix, subtask), splits=["validation"])
+        load_dataset(os.path.join(prefix, subtask), splits=["train"])
     )
+    print(f"Done Loading {subtask}")
     return TaskMeta(subtask, train_split=train_instances)
 
 
@@ -45,8 +44,8 @@ def load_general_tasks(
                 order_index[subtask] = i
             i += 1
 
-    with Pool(num_proc) as pool:
-        subtask_metas = list(tqdm(pool.imap(process_job, workload), total=i))
+    # with Pool(num_proc) as pool:
+    subtask_metas = list(map(process_job, workload))
 
     if use_orderring:
         order = pd.read_csv(orderring_file)
@@ -100,16 +99,17 @@ Experiment 2
 """
 
 
-def experiment_2(sim_npy="data/sim_mat.npy", NUM_INSTANCES=25000):
+def experiment_2(
+    sim_npy="artifacts/similarity-matrix/2epochs-t0-flan2021-cot.npy",
+    NUM_INSTANCES=25000,
+):
     subtasks_list, subtask_metas = load_general_tasks()
 
     # Load PMI Matrix
     S = np.load(sim_npy)
 
     quad_cvx = QuadraticConvexOptimization(S)
-    task_prob = quad_cvx.compute_task_probability(1.0, 1.0)
-
-    print(task_prob.shape)
+    task_prob = quad_cvx.compute_task_probability(10.0, 15.0)
 
     multinomial = Multinomial(
         subtasks_list,
@@ -132,14 +132,17 @@ Experiment 3
 """
 
 
-def experiment_3(sim_npy="data/sim_mat.npy", NUM_INSTANCES=25000):
+def experiment_3(
+    sim_npy="artifacts/similarity-matrix/2epochs-t0-flan2021-cot.npy",
+    NUM_INSTANCES=25000,
+):
     subtasks_list, subtask_metas = load_general_tasks()
 
     # Load PMI Matrix
     S = np.load(sim_npy)
 
     bp = BeliefPropagation(S)
-    task_prob = bp.compute_task_probability()
+    task_prob = bp.compute_task_probability(_beta=10.0, _lambda=15.0)
 
     multinomial = Multinomial(
         subtasks_list,
@@ -156,4 +159,5 @@ def experiment_3(sim_npy="data/sim_mat.npy", NUM_INSTANCES=25000):
 
 if __name__ == "__main__":
     mp.set_start_method("spawn")
+    # experiment_2()
     experiment_3()

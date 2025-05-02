@@ -1,11 +1,10 @@
-FROM nvcr.io/nvidia/pytorch:23.04-py3
+FROM nvcr.io/nvidia/pytorch:24.10-py3
 
 RUN apt-get update  && apt-get install -y git python3-virtualenv wget 
 
 WORKDIR /workspace
 
-RUN pip install torch==2.2.0+cu121 torchvision==0.17.0+cu121 torchaudio==2.2.0+cu121 --index-url https://download.pytorch.org/whl/cu121
-RUN pip install transformers==4.44.0
+RUN pip install transformers
 RUN pip install sentencepiece
 RUN pip install datasets 
 RUN pip install accelerate 
@@ -22,7 +21,7 @@ RUN pip install dash
 RUN pip install ipykernel
 RUN pip install -U pip setuptools wheel
 RUN pip install wandb
-RUN pip install bitsandbytes==0.44.0
+RUN pip install bitsandbytes
 RUN pip install vllm
 
 RUN apt-get -y install apt-utils sudo

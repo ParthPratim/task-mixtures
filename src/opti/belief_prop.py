@@ -5,7 +5,7 @@ from src.opti.base import TaskProbabilityOptimization
 
 
 class BeliefPropagation(TaskProbabilityOptimization):
-    def compute_task_probability(self, _beta=1.0, _lambda=1.0, mu=2.0, T=50):
+    def compute_task_probability(self, _beta=10.0, _lambda=15.0, mu=2.0, T=500):
         S = self.S
         n = S.shape[0]
 
