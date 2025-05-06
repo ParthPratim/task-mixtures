@@ -69,6 +69,42 @@ class TaskInstanceProportional(DataMixture):
 
 
 """
+Uniformly randomly across all datasets taken as Union
+"""
+
+
+class GlobalUniform(DataMixture):
+    def create_mixture(self) -> bool:
+        total_instances = 0
+        inst_cnt = [0]
+        for subtask_meta in self.subtask_metas:
+            num_instances = subtask_meta.num_train_instances
+            inst_cnt.append(num_instances)
+            total_instances += num_instances
+
+        sel_instances = np.random.uniform(0, total_instances, size=self.num_instances)
+
+        inst_cnt = np.cumsum(inst_cnt)
+
+        def get_mapped_instance(index):
+            idx = bisect.bisect_right(inst_cnt, index)  # actual index I am looking for
+            if idx == len(inst_cnt) or inst_cnt[idx] > index:
+                idx -= 1
+
+            true_index = index - inst_cnt[idx]
+            assert true_index >= 0 and true_index < len(
+                self.subtask_metas[idx].train_split
+            )
+            return self.subtask_metas[idx].train_split[true_index]
+
+        train_split = list(map(get_mapped_instance, sel_instances))
+
+        self.final_mixture = TaskMeta(self.mixture_name, train_split=train_split)
+
+        return True
+
+
+"""
 Tasks are sampled from a multinomial disribution 
 Budget is not specified explicitly
 Uniform across each subtask, budget is from multinomial

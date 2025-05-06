@@ -93,3 +93,27 @@ class DataCollatorForInstructionTuning:
         )
         labels = rnn.pad_sequence(labels, batch_first=True, padding_value=IGNORE_INDEX)
         return dict(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
+
+@dataclass
+class DataCollatorForInstructionTuningOnDevice:
+    """Collate examples for instruction tuning."""
+
+    tokenizer: PreTrainedTokenizerBase
+    device: str 
+
+    def __call__(self, features: List[Dict]) -> Dict[str, torch.Tensor]:
+        input_ids, attention_mask, labels = tuple(
+            [torch.tensor(feature[key]) for feature in features]
+            for key in ["input_ids", "attention_mask", "labels"]
+        )
+        input_ids = rnn.pad_sequence(
+            input_ids, batch_first=True, padding_value=self.tokenizer.pad_token_id
+        ).to(self.device)
+
+        attention_mask = rnn.pad_sequence(
+            attention_mask, batch_first=True, padding_value=0
+        ).to(self.device)
+        
+        labels = rnn.pad_sequence(labels, batch_first=True, padding_value=IGNORE_INDEX).to(self.device)
+                                                                                          
+        return dict(input_ids=input_ids, attention_mask=attention_mask, labels=labels)

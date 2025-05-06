@@ -1,6 +1,7 @@
 import multiprocessing as mp
 import os
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
@@ -139,16 +140,16 @@ def experiment_3(
     subtasks_list, subtask_metas = load_general_tasks()
 
     # Load PMI Matrix
-    S = np.load(sim_npy)
+    S = np.exp(np.load(sim_npy))
 
     bp = BeliefPropagation(S)
-    task_prob = bp.compute_task_probability(_beta=10.0, _lambda=15.0)
+    task_prob = bp.compute_task_probability(_beta=10.0, _lambda=15.0, T=1000)
 
     multinomial = Multinomial(
         subtasks_list,
         subtask_metas,
         NUM_INSTANCES,
-        "artifacts/final-submixtures/25K-belief-prop-multinomial-to-flan2021-cot",
+        "artifacts/final-submixtures/25K-bp1",
         task_prob=task_prob,
     )
 
@@ -157,7 +158,31 @@ def experiment_3(
     multinomial.dump_mixture(f"{multinomial.mixture_name}.json")
 
 
+"""
+Optimization Function Test
+"""
+
+
+def experiment_4(sim_npy="artifacts/similarity-matrix/2epochs-t0-flan2021-cot.npy"):
+    S = np.exp(np.load(sim_npy))
+    # S = (S - S.min()) / (S.max() - S.min() + 1e-8)
+    # S = 0.5 * (S + S.T)
+
+    bp = QuadraticConvexOptimization(S)
+    n = np.array(bp.compute_task_probability(_beta=2, _lambda=0.25, _sigma=2))
+
+    print(np.sum(n))
+    print("NZ : ", np.count_nonzero(n))
+    print(n)
+    plt.figure(figsize=(8, 4))
+    plt.bar(range(len(n)), n, tick_label=[f"P{i}" for i in range(len(n))])
+    plt.ylabel("Probability")
+    plt.title("Probability Distribution")
+    plt.grid(axis="y", linestyle="--", alpha=0.7)
+    plt.show()
+
+
 if __name__ == "__main__":
     mp.set_start_method("spawn")
     # experiment_2()
-    experiment_3()
+    experiment_4()
