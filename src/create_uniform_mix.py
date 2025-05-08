@@ -167,9 +167,9 @@ Optimization Function Test
 
 def experiment_4(sim_npy="artifacts/similarity-matrix/3epochs-t0-flan2021-cot-tulu-sglue.npy"):
     S = np.load(sim_npy)
-    S = (S - np.mean(S) ) / (np.std(S) + 1e-8)
-    S = (S - S.min()) / (S.max() - S.min() + 1e-8)
-    S = 0.5 * (S + S.T)
+    #S = (S - np.mean(S) ) / (np.std(S) + 1e-8)
+    #S = (S - S.min()) / (S.max() - S.min() + 1e-8)
+    #S = 0.5 * (S + S.T)
 
     bp = QuadraticConvexOptimization(S)
     n = np.array(bp.compute_task_probability(_beta=0.25, _lambda=1.25))
@@ -188,7 +188,6 @@ def experiment_4(sim_npy="artifacts/similarity-matrix/3epochs-t0-flan2021-cot-tu
     plt.show()
 
 """
-
 def experiment_5(sim_npy="artifacts/similarity-matrix/2epochs-t0-flan2021-cot.npy"):
     S  = np.exp(np.load(sim_npy))
 
@@ -204,7 +203,6 @@ def experiment_5(sim_npy="artifacts/similarity-matrix/2epochs-t0-flan2021-cot.np
     return print(GridSearch(GraphLaplacianOptimization, S, beta_range=(-50,50),lambda_range=(-50,50),evaluator=evaluator))
 
 """
-
 if __name__ == "__main__":
     mp.set_start_method("spawn")
     # experiment_2()
