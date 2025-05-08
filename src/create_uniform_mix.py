@@ -5,12 +5,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-#import gc
+# import gc
 from src.mixtures.base import TaskMeta
 from src.mixtures.uniform import Multinomial, Uniform
 from src.opti.belief_prop import BeliefPropagation
 from src.opti.quad_cvx import QuadraticConvexOptimization, GraphLaplacianOptimization
-#from src.opti.search import GridSearch
+# from src.opti.search import GridSearch
 from src.preprocess.dataset import load_dataset
 
 
@@ -28,7 +28,8 @@ def load_general_tasks(
     orderring_file="artifacts/task-index-maps/3epochs-t0-flan2021-cot-tulu-sglue.csv",
     num_proc=2,
 ):
-    mixture_folders = ["data/t0", "data/flan2021", "data/cot", "data/tulu", "data/sglue"]
+    mixture_folders = ["data/t0", "data/flan2021",
+                       "data/cot", "data/tulu", "data/sglue"]
     subtask_jsons = []
     subtask_metas = []
     order_index = {}
@@ -54,7 +55,7 @@ def load_general_tasks(
         order = pd.read_csv(orderring_file)
         prefix = "result_gpt2_"
         for index, row in order.iterrows():
-            task_name = row["Task-Name"][len(prefix) :]
+            task_name = row["Task-Name"][len(prefix):]
             if task_name not in order_index or order_index[task_name] == index:
                 continue
 
@@ -167,17 +168,21 @@ Optimization Function Test
 
 def experiment_4(sim_npy="artifacts/similarity-matrix/3epochs-t0-flan2021-cot-tulu-sglue.npy"):
     S = np.load(sim_npy)
-    S = (S - np.mean(S) ) / (np.std(S) + 1e-8)
-    S = (S - S.min()) / (S.max() - S.min() + 1e-8)
+    
+    
+    # S = (S - np.mean(S) ) / (np.std(S) + 1e-8)
+    # S = (S - S.min()) / (S.max() - S.min() + 1e-8)
     S = 0.5 * (S + S.T)
 
+    dim = S.shape[0]
+    print("DImension of S is: ",dim)
     bp = QuadraticConvexOptimization(S)
-    n = np.array(bp.compute_task_probability(_beta=0.25, _lambda=1.25))
+    n = np.array(bp.closed_form_task_probs(beta=dim, lambda_=1.0))
     print(n)
 
-    n[n <= 1e-8] = 0
+    # n[n <= 1e-8] = 0
 
-    print(np.sum(n))
+    print("Total probability:", np.sum(n))
     print("NZ : ", np.count_nonzero(n))
     print(n)
     plt.figure(figsize=(8, 4))
@@ -187,6 +192,45 @@ def experiment_4(sim_npy="artifacts/similarity-matrix/3epochs-t0-flan2021-cot-tu
     plt.grid(axis="y", linestyle="--", alpha=0.7)
     plt.show()
 
+def experiment_5(sim_npy="artifacts/similarity-matrix/3epochs-t0-flan2021-cot-tulu-sglue.npy"):
+    S = np.load(sim_npy)
+    
+    # Ensure S is symmetric
+    #S = 0.5 * (S + S.T)
+    dim = S.shape[0]
+
+    #np.random.seed(42)
+    #S = np.random.rand(dim, dim)  # Random values between 0 and 1
+    S = 0.5 * (S + S.T)  # Ensure symmetry
+    #S += np.eye(dim)  # Add identity to make it diagonally dominant (PSD)
+
+    
+    print("Dimension of S is: ", dim)
+    # Define expanded ranges for beta and lambda
+    beta_values = [1.0, 5.0, 10.0, 20.0, 50.0, 100, 150 , dim, 500, 1000]
+    lambda_values = [0.1, 0.5, 1.0, 5.0, 10.0, 20.0, 200, 500, 800,1000]
+
+
+    plt.figure(figsize=(14, 8))
+
+    for beta in beta_values:
+        for lambda_ in lambda_values:
+            # Instantiate the optimizer and compute probabilities
+            bp = QuadraticConvexOptimization(S)
+            n = np.array(bp.closed_form_task_probs(beta=beta, lambda_=lambda_))
+            
+            # Plot the probability distribution as a line plot
+            plt.plot(range(len(n)), n, label=f"β={beta}, λ={lambda_}")
+
+    # Add plot details
+    plt.xlabel("Task Index")
+    plt.ylabel("Probability")
+    plt.title("Probability Distributions for Different β and λ Combinations")
+    plt.legend(loc="upper right", bbox_to_anchor=(1.3, 1.0))
+    plt.grid(axis="y", linestyle="--", alpha=0.7)
+    plt.tight_layout()
+    plt.show()
+    
 """
 
 def experiment_5(sim_npy="artifacts/similarity-matrix/2epochs-t0-flan2021-cot.npy"):
@@ -208,4 +252,4 @@ def experiment_5(sim_npy="artifacts/similarity-matrix/2epochs-t0-flan2021-cot.np
 if __name__ == "__main__":
     mp.set_start_method("spawn")
     # experiment_2()
-    experiment_4()
+    experiment_5()
