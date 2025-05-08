@@ -5,13 +5,18 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-# import gc
+import pickle as pkl
+#import gc
 from src.mixtures.base import TaskMeta
 from src.mixtures.uniform import Multinomial, Uniform
 from src.opti.belief_prop import BeliefPropagation
 from src.opti.quad_cvx import QuadraticConvexOptimization, GraphLaplacianOptimization
 # from src.opti.search import GridSearch
+from src.opti.cluster import ClusteredOptimization
+#from src.opti.search import GridSearch
 from src.preprocess.dataset import load_dataset
+from functools import cmp_to_key
+import re
 
 
 def process_job(args):
@@ -165,10 +170,18 @@ def experiment_3(
 Optimization Function Test
 """
 
+def plot_prob_dist(n, filename):
+    plt.figure(figsize=(8, 4))
+    plt.bar(range(len(n)), n, tick_label=[f"P{i}" for i in range(len(n))])
+    plt.ylabel("Probability")
+    plt.title("Probability Distribution")
+    plt.grid(axis="y", linestyle="--", alpha=0.7)
+    plt.savefig(filename)
+
 
 def experiment_4(sim_npy="artifacts/similarity-matrix/3epochs-t0-flan2021-cot-tulu-sglue.npy"):
     S = np.load(sim_npy)
-    
+
     
     # S = (S - np.mean(S) ) / (np.std(S) + 1e-8)
     # S = (S - S.min()) / (S.max() - S.min() + 1e-8)
@@ -232,7 +245,6 @@ def experiment_5(sim_npy="artifacts/similarity-matrix/3epochs-t0-flan2021-cot-tu
     plt.show()
     
 """
-
 def experiment_5(sim_npy="artifacts/similarity-matrix/2epochs-t0-flan2021-cot.npy"):
     S  = np.exp(np.load(sim_npy))
 
@@ -248,6 +260,72 @@ def experiment_5(sim_npy="artifacts/similarity-matrix/2epochs-t0-flan2021-cot.np
     return print(GridSearch(GraphLaplacianOptimization, S, beta_range=(-50,50),lambda_range=(-50,50),evaluator=evaluator))
 
 """
+
+def experiment_5(
+        sim_npy="artifacts/similarity-matrix/3epochs-t0-flan2021-cot-tulu-sglue.npy",
+        orderring_file="artifacts/task-index-maps/3epochs-t0-flan2021-cot-tulu-sglue.csv",
+        cluster_size=10,
+        _beta = 0.25, _lambda = 1.25
+        ):
+
+    task_meta_file = "tasks.pkl"
+    task_embs_file = "tasks_embeddings.npy"
+    emb_folder_map = {
+        "t0" : "artifacts/task_embeddings/t0_embed",
+        "flan2021" : "artifacts/task_embeddings/flan2021_embed",
+        "cot" : "artifacts/task_embeddings/cot_embed",
+    }
+    order = pd.read_csv(orderring_file)
+    reverse_map = {}
+    for _, row in order.iterrows():
+        subtask = row["Task-Name"][len("result_gpt2-"):]
+        if "t0" in subtask or "flan2021" in subtask or "cot" in subtask:
+            subtask = subtask[subtask.index('-')+1:]
+            subtask = subtask[subtask.index('-')+1:]
+            reverse_map[subtask] = int(row['Task-ID'])
+
+    S = np.load(sim_npy)
+    task_embeddings = [ None ] * S.shape[0]
+
+    embed_size = 0
+    for task in emb_folder_map.keys():
+        with open(os.path.join(emb_folder_map[task], task_meta_file), "rb") as f:
+            task_meta = list(pkl.load(f))
+
+        cpy = task_meta
+
+        task_embs = np.load(os.path.join(emb_folder_map[task], task_embs_file))
+
+        task_data = []
+        for i, subtask in enumerate(task_meta):
+            _subtask = re.sub(r'[:/-]', '_',subtask)
+            task_embeddings[reverse_map[_subtask]] = task_embs[i]
+            embed_size = task_embs[i].shape[0]
+        
+
+    for idx, val in enumerate(task_embeddings):
+        if val is None:
+            task_embeddings[idx] = np.zeros((embed_size, )) 
+
+    obj = ClusteredOptimization(S)
+    
+    cluster_task_map, cluster_prob = obj.compute_task_probability(task_embeddings=task_embeddings, 
+                                 cluster_size=cluster_size,
+                                 _beta=_beta,
+                                 _lambda=_lambda)
+    for i, p in enumerate(cluster_prob):
+        if len(p) == 0:
+            continue
+        print(f"Non-Zero in cluster {i} = ", np.count_nonzero(p))
+        plot_prob_dist(p, f"cluster_prob_dist_{i}.png")
+
+        
+
+
+            
+
+
+    
 
 if __name__ == "__main__":
     mp.set_start_method("spawn")

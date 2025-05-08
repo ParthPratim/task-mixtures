@@ -27,7 +27,11 @@ def load_dataset(dataset_path, splits=["train"]):
 
     combined_data = []
     for split in splits:
-        combined_data.extend(data[split])
+        if split in data:
+            combined_data.extend(data[split])
+
+    if len(combined_data) == 0:
+        return load_dataset(dataset_path, splits = ["train"] if split == ["validation"] else ["validation"])
 
     return Dataset.from_list(combined_data)
 
