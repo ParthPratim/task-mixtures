@@ -5,10 +5,12 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+#import gc
 from src.mixtures.base import TaskMeta
 from src.mixtures.uniform import Multinomial, Uniform
 from src.opti.belief_prop import BeliefPropagation
-from src.opti.quad_cvx import QuadraticConvexOptimization
+from src.opti.quad_cvx import QuadraticConvexOptimization, GraphLaplacianOptimization
+#from src.opti.search import GridSearch
 from src.preprocess.dataset import load_dataset
 
 
@@ -23,10 +25,10 @@ def process_job(args):
 
 def load_general_tasks(
     use_orderring=True,
-    orderring_file="artifacts/task-index-maps/2epochs-t0-flan2021-cot.csv",
+    orderring_file="artifacts/task-index-maps/3epochs-t0-flan2021-cot-tulu-sglue.csv",
     num_proc=2,
 ):
-    mixture_folders = ["data/t0", "data/flan2021", "data/cot"]
+    mixture_folders = ["data/t0", "data/flan2021", "data/cot", "data/tulu", "data/sglue"]
     subtask_jsons = []
     subtask_metas = []
     order_index = {}
@@ -163,13 +165,17 @@ Optimization Function Test
 """
 
 
-def experiment_4(sim_npy="artifacts/similarity-matrix/2epochs-t0-flan2021-cot.npy"):
-    S = np.exp(np.load(sim_npy))
-    # S = (S - S.min()) / (S.max() - S.min() + 1e-8)
-    # S = 0.5 * (S + S.T)
+def experiment_4(sim_npy="artifacts/similarity-matrix/3epochs-t0-flan2021-cot-tulu-sglue.npy"):
+    S = np.load(sim_npy)
+    S = (S - np.mean(S) ) / (np.std(S) + 1e-8)
+    S = (S - S.min()) / (S.max() - S.min() + 1e-8)
+    S = 0.5 * (S + S.T)
 
     bp = QuadraticConvexOptimization(S)
-    n = np.array(bp.compute_task_probability(_beta=2, _lambda=0.25, _sigma=2))
+    n = np.array(bp.compute_task_probability(_beta=0.25, _lambda=1.25))
+    print(n)
+
+    n[n <= 1e-8] = 0
 
     print(np.sum(n))
     print("NZ : ", np.count_nonzero(n))
@@ -181,6 +187,23 @@ def experiment_4(sim_npy="artifacts/similarity-matrix/2epochs-t0-flan2021-cot.np
     plt.grid(axis="y", linestyle="--", alpha=0.7)
     plt.show()
 
+"""
+
+def experiment_5(sim_npy="artifacts/similarity-matrix/2epochs-t0-flan2021-cot.npy"):
+    S  = np.exp(np.load(sim_npy))
+
+    # p is the probability distribution
+    def evaluator(p):
+        p = np.array(p)
+        eps = 1e-10
+        total_excl = np.sum(p[p <= eps])
+        p[p <= eps] = 0 
+        non_zero_count = np.count_nonzero(p)
+        return non_zero_count 
+
+    return print(GridSearch(GraphLaplacianOptimization, S, beta_range=(-50,50),lambda_range=(-50,50),evaluator=evaluator))
+
+"""
 
 if __name__ == "__main__":
     mp.set_start_method("spawn")
