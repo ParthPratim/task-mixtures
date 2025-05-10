@@ -20,8 +20,8 @@ def project_to_simplex_chenn_et_al_2024(y):
     n = y.shape[0]
     t = np.zeros(y.shape)
     t_cap = -1
-    for i in range(n-1,-1,-1):
-        t[i] = (csum[n-1] - csum[i] - 1) / (n-i + 1)
+    for i in range(n-2,-1,-1):
+        t[i] = (csum[n-1] - csum[i] - 1) / (n - i - 1)
         if t[i] >= y[i]:
             t_cap = t[i]
             break
