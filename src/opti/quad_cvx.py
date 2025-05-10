@@ -125,7 +125,7 @@ class QuadraticConvexOptimization(TaskProbabilityOptimization):
         return p.value
 
     def compute_task_probability(self, _beta, _lambda):
-        S = self.S
+        S = self.S 
         row_sum = np.sum(S, axis=1)
         np.random.seed(42)
         n = S.shape[0]

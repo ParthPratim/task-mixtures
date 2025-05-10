@@ -30,7 +30,7 @@ class Uniform(DataMixture):
 
         self.final_mixture = TaskMeta(self.mixture_name, train_split=train_split)
 
-        return True
+        return self.final_mixture
 
 
 """
@@ -71,10 +71,9 @@ class TaskInstanceProportional(DataMixture):
 """
 Uniformly randomly across all datasets taken as Union
 """
-
-
 class GlobalUniform(DataMixture):
     def create_mixture(self) -> bool:
+        print("Making Random Dataset Across All Instances")
         total_instances = 0
         inst_cnt = [0]
         for subtask_meta in self.subtask_metas:
@@ -95,7 +94,8 @@ class GlobalUniform(DataMixture):
             assert true_index >= 0 and true_index < len(
                 self.subtask_metas[idx].train_split
             )
-            return self.subtask_metas[idx].train_split[true_index]
+            print(true_index)
+            return self.subtask_metas[idx].train_split[int(true_index)]
 
         train_split = list(map(get_mapped_instance, sel_instances))
 
@@ -155,4 +155,4 @@ class Multinomial(DataMixture):
         train_split = list(map(get_mapped_instance, sel_inst))
         self.final_mixture = TaskMeta(self.mixture_name, train_split=train_split)
 
-        return True
+        return self.final_mixture
