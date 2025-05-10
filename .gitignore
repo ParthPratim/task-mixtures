@@ -4,3 +4,4 @@ data
 git_setup.sh
 *.pyc
 env
+git-lfs-3.6.1
