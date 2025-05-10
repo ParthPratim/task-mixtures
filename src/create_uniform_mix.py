@@ -139,7 +139,8 @@ def experiment_2(
     S = np.load(sim_npy)
 
     quad_cvx = QuadraticConvexOptimization(S)
-    task_prob = quad_cvx.closed_form_task_probs(10, 50)
+    task_prob = quad_cvx.closed_form_task_probs(1, 50)
+    print(np.sum(task_prob))
     print(np.count_nonzero(task_prob))
     plot_prob_dist(task_prob, 'test.png')
     return 
