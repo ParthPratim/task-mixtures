@@ -139,7 +139,7 @@ def experiment_2(
     S = np.load(sim_npy)
 
     quad_cvx = QuadraticConvexOptimization(S)
-    task_prob = quad_cvx.closed_form_task_probs(0.025, 2)
+    task_prob = quad_cvx.closed_form_task_probs(10, 50)
     print(np.count_nonzero(task_prob))
     plot_prob_dist(task_prob, 'test.png')
     return 
@@ -251,21 +251,27 @@ def experiment_5_1(sim_npy="artifacts/similarity-matrix/3epochs-t0-flan2021-cot-
 
     for beta in beta_values:
         for lambda_ in lambda_values:
+            print(beta, lambda_)
+            try:
             # Instantiate the optimizer and compute probabilities
-            bp = QuadraticConvexOptimization(S)
-            n = np.array(bp.closed_form_task_probs(beta=beta, lambda_=lambda_))
+                bp = QuadraticConvexOptimization(S)
+                n = np.array(bp.compute_task_probability(_beta=beta, _lambda=lambda_))
+                print(np.count_nonzero(n))
             
-            # Plot the probability distribution as a line plot
-            plt.plot(range(len(n)), n, label=f"β={beta}, λ={lambda_}")
+                # Plot the probability distribution as a line plot
+                plt.plot(range(len(n)), n, label=f"β={beta}, λ={lambda_}")
+            except:
+                pass
 
     # Add plot details
     plt.xlabel("Task Index")
     plt.ylabel("Probability")
     plt.title("Probability Distributions for Different β and λ Combinations")
     plt.legend(loc="upper right", bbox_to_anchor=(1.3, 1.0))
+    plt.legend()
     plt.grid(axis="y", linestyle="--", alpha=0.7)
     plt.tight_layout()
-    plt.show()
+    plt.savefig("test.png")
     
 """
 def experiment_5(sim_npy="artifacts/similarity-matrix/2epochs-t0-flan2021-cot.npy"):
@@ -287,7 +293,7 @@ def experiment_5(sim_npy="artifacts/similarity-matrix/2epochs-t0-flan2021-cot.np
 def experiment_5_2(
         sim_npy="artifacts/similarity-matrix/3epochs-t0-flan2021-cot-tulu-sglue.npy",
         orderring_file="artifacts/task-index-maps/3epochs-t0-flan2021-cot-tulu-sglue.csv",
-        cluster_size=10,
+        cluster_size=32,
         _beta = 0.25, _lambda = 1.25, NUM_INSTANCES=25000
         ):
     
@@ -305,9 +311,9 @@ def experiment_5_2(
     reverse_map = {}
     for _, row in order.iterrows():
         subtask = row["Task-Name"][len("result_gpt2_"):]
-        subtask = subtask[subtask.index('-')+1:]
         if "t0" in subtask or "flan2021" in subtask or "cot" in subtask:
             subtask = subtask[subtask.index('-')+1:]
+        subtask = subtask[subtask.index('-')+1:]
         reverse_map[subtask] = int(row['Task-ID'])
 
     S = np.load(sim_npy)
@@ -321,6 +327,7 @@ def experiment_5_2(
         task_embs = np.load(os.path.join(emb_folder_map[task], task_embs_file))
  
         for i, subtask in enumerate(task_meta):
+            print(task, subtask)
             _subtask = re.sub(r'[:/-]', '_',subtask)
             task_embeddings[reverse_map[_subtask]] = task_embs[i]
             embed_size = task_embs[i].shape[0]
@@ -345,7 +352,7 @@ def experiment_5_2(
     
 
     final_submixture = []
-    submixture_filename = "artifacts/final-submixtures/25K-cluster-opti-cvx-10clusters-0_25-1_25-to-flan2021-cot"
+    submixture_filename = "artifacts/final-submixtures/25K-cluster-opti-cvx-32clusters-0_25-1_25-to-flan2021-cot"
     for cluster_idx, cluster_task_indices in cluster_task_map.items():
         task_budget = int(math.ceil(NUM_INSTANCES * ((len(cluster_task_indices)*1.0)  / S.shape[0])))
         multinomial = Multinomial(

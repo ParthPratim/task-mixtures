@@ -12,6 +12,28 @@ def check_matrix(S):
     return all_positive, is_symmetric
 
 
+def project_to_simplex_chenn_et_al_2024(y):
+    sorted_indices = np.argsort(y)
+    y = y[sorted_indices]
+
+    csum = np.cumsum(y)
+    n = y.shape[0]
+    t = np.zeros(y.shape)
+    t_cap = -1
+    for i in range(n-1,-1,-1):
+        t[i] = (csum[n-1] - csum[i] - 1) / (n-1)
+        if t[i] >= y[i]:
+            t_cap = t[i]
+            break
+    
+    if t_cap == -1:
+        t_cap = (csum[n-1] - 1 ) / n 
+    
+    inverse_indices = np.argsort(sorted_indices) 
+
+    return np.maximum(y - t_cap, 0)[inverse_indices]
+
+
 class QuadraticConvexOptimization(TaskProbabilityOptimization):
     """
     1. Compute Minimum EignenValues for the matrix
@@ -96,8 +118,7 @@ class QuadraticConvexOptimization(TaskProbabilityOptimization):
 
         if project_to_simplex:
             # Project to probability simplex
-            p_star = np.clip(p_star, 0, None)
-            p_star = p_star / p_star.sum()
+            p_star = project_to_simplex_chenn_et_al_2024(p_star)
 
         return p_star
 
