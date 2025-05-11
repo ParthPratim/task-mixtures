@@ -9,7 +9,7 @@ def compute_cluster_uniform_prob(S, _beta = 0.25, _lambda=1.25):
         return []
     print("Started QuadCvx On Similarity Matrix shape : " , S.shape)
     obj = QuadraticConvexOptimization(S)        
-    return obj.compute_task_probability(_beta, _lambda)
+    return obj.closed_form_task_probs(_beta, _lambda)
 
 
 """
@@ -17,13 +17,13 @@ Clusterring over task embeddings
 """
 class ClusteredOptimization(TaskProbabilityOptimization):
 
-    def compute_task_probability(self,  task_embeddings, cluster_size = 10, _beta = 0.25, _lambda = 1.25):
+    def compute_task_probability(self,  task_embeddings, cluster_size = 10, _beta = 0.25, _lambda = 1.25, use_sim_mat=False):
         kmeans = KMeans(n_clusters=cluster_size, 
                init='k-means++',
                n_init=10, 
                max_iter=500,
                random_state=42,
-               algorithm='lloyd').fit(task_embeddings)
+               algorithm='lloyd').fit(task_embeddings if not use_sim_mat else  self.S)
 
 
         labels = kmeans.labels_
