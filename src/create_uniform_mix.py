@@ -1,7 +1,7 @@
 import multiprocessing as mp
 from  multiprocessing import Pool
 import os
-
+import torch
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -14,6 +14,7 @@ from src.opti.belief_prop import BeliefPropagation
 from src.opti.quad_cvx import QuadraticConvexOptimization, GraphLaplacianOptimization
 # from src.opti.search import GridSearch
 from src.opti.cluster import ClusteredOptimization
+from src.opti.grad import ProjectedGradientDescent
 #from src.opti.search import GridSearch
 from src.preprocess.dataset import load_dataset
 from functools import cmp_to_key
@@ -139,18 +140,22 @@ def experiment_2(
     S = np.load(sim_npy)
 
     quad_cvx = QuadraticConvexOptimization(S)
-    task_prob = quad_cvx.closed_form_task_probs(1, 50)
+    task_prob = quad_cvx.closed_form_task_probs(beta=0.8, lambda_=1.5, use_laplace=True)
     print(np.sum(task_prob))
     print(np.count_nonzero(task_prob))
     plot_prob_dist(task_prob, 'test.png')
-    return 
+
+    return       
     multinomial = Multinomial(
         subtasks_list,
         subtask_metas,
         NUM_INSTANCES,
-        "artifacts/final-submixtures/25K-opti-closed-10-20-to-flan2021-cot-tulu-sglue",
+        "artifacts/data/25K-closed_proj-1_5-101-to-flan2021-cot-tulu-sglue",
         task_prob=task_prob,
     )
+
+    with open("artifacts/probs/25K-closed_proj-1_5-101-to-flan2021-cot-tulu-sglue.pkl", "wb")  as f:
+        pkl.dump(task_prob, f)
 
     multinomial.create_mixture()
 
@@ -175,7 +180,7 @@ def experiment_3(
     S = np.exp(np.load(sim_npy))
 
     bp = BeliefPropagation(S)
-    task_prob = bp.compute_task_probability(_beta=10.0, _lambda=15.0, T=1000)
+    task_prob = bp.compute_task_probability(_beta=10.0, _lambda=50.0, T=1000)
 
     multinomial = Multinomial(
         subtasks_list,
@@ -294,11 +299,12 @@ def experiment_5(sim_npy="artifacts/similarity-matrix/2epochs-t0-flan2021-cot.np
 def experiment_5_2(
         sim_npy="artifacts/similarity-matrix/3epochs-t0-flan2021-cot-tulu-sglue.npy",
         orderring_file="artifacts/task-index-maps/3epochs-t0-flan2021-cot-tulu-sglue.csv",
-        cluster_size=32,
-        _beta = 0.25, _lambda = 1.25, NUM_INSTANCES=25000
+        cluster_size=8,
+        _beta = 0.25, _lambda = 1.25, NUM_INSTANCES=25000, use_sim_mat=False,
+        subtasks_list = None, subtask_metas = None
         ):
-    
-    subtasks_list, subtask_metas = load_general_tasks()
+    if not subtasks_list or not subtask_metas:
+        subtasks_list, subtask_metas = load_general_tasks()
     task_meta_file = "tasks.pkl"
     task_embs_file = "tasks_embeddings.npy"
     emb_folder_map = {
@@ -343,7 +349,8 @@ def experiment_5_2(
     cluster_task_map, cluster_prob = obj.compute_task_probability(task_embeddings=task_embeddings, 
                                  cluster_size=cluster_size,
                                  _beta=_beta,
-                                 _lambda=_lambda)
+                                 _lambda=_lambda, use_sim_mat=use_sim_mat)
+    
     
     for i, p in enumerate(cluster_prob):
         if len(p) == 0:
@@ -353,7 +360,15 @@ def experiment_5_2(
     
 
     final_submixture = []
-    submixture_filename = "artifacts/final-submixtures/25K-cluster-opti-cvx-32clusters-0_25-1_25-to-flan2021-cot"
+    submixture_filename = f"artifacts/data/25K-cluster_embed_closed-{cluster_size}-0_25-1_25-multi"
+    pkl_filename = f"artifacts/probs/25K-cluster_embed_closed-{cluster_size}-0_25-1_25-multi"
+    with open(pkl_filename + ".pkl", "wb") as f:
+        pkl.dump(
+            {
+                "cluster_task_map" : cluster_task_map,
+                "cluster_prob" : cluster_prob
+            }, f
+        )
     for cluster_idx, cluster_task_indices in cluster_task_map.items():
         task_budget = int(math.ceil(NUM_INSTANCES * ((len(cluster_task_indices)*1.0)  / S.shape[0])))
         multinomial = Multinomial(
@@ -377,5 +392,15 @@ def experiment_5_2(
 
 if __name__ == "__main__":
     mp.set_start_method("spawn")
-    # experiment_2()
     experiment_2()
+    """
+    np.random.seed(42)
+    torch.manual_seed(42)
+    subtasks_list, subtask_metas = load_general_tasks()
+    experiment_5_2(cluster_size=4, use_sim_mat=False, subtasks_list=subtasks_list, subtask_metas=subtask_metas)
+    experiment_5_2(cluster_size=8, use_sim_mat=False, subtasks_list=subtasks_list, subtask_metas=subtask_metas)
+    experiment_5_2(cluster_size=16, use_sim_mat=False, subtasks_list=subtasks_list, subtask_metas=subtask_metas)
+    experiment_5_2(cluster_size=32, use_sim_mat=False, subtasks_list=subtasks_list, subtask_metas=subtask_metas)
+    """
+
+
