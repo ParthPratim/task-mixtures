@@ -1,26 +1,30 @@
 import multiprocessing as mp
+from  multiprocessing import Pool
 import os
-
+import torch
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-
+import math
 import pickle as pkl
 #import gc
 from src.mixtures.base import TaskMeta
-from src.mixtures.uniform import Multinomial, Uniform
+from src.mixtures.uniform import Multinomial, Uniform, GlobalUniform
 from src.opti.belief_prop import BeliefPropagation
 from src.opti.quad_cvx import QuadraticConvexOptimization, GraphLaplacianOptimization
 # from src.opti.search import GridSearch
 from src.opti.cluster import ClusteredOptimization
+from src.opti.grad import ProjectedGradientDescent
 #from src.opti.search import GridSearch
 from src.preprocess.dataset import load_dataset
 from functools import cmp_to_key
 import re
+import json
 
 
 def process_job(args):
     prefix, subtask, idx = args
+    print(subtask) 
     train_instances = list(
         load_dataset(os.path.join(prefix, subtask), splits=["train"])
     )
@@ -31,7 +35,7 @@ def process_job(args):
 def load_general_tasks(
     use_orderring=True,
     orderring_file="artifacts/task-index-maps/3epochs-t0-flan2021-cot-tulu-sglue.csv",
-    num_proc=2,
+    num_proc=64,
 ):
     mixture_folders = ["data/t0", "data/flan2021",
                        "data/cot", "data/tulu", "data/sglue"]
@@ -47,14 +51,19 @@ def load_general_tasks(
     i = 0
     for prefix, subtasks in subtask_jsons:
         for subtask in subtasks:
+            if subtask[-1] != 'n':
+                continue
             workload.append((prefix, subtask, i))
             subtasks_list.append(subtask)
             if use_orderring:
                 order_index[subtask] = i
             i += 1
 
-    # with Pool(num_proc) as pool:
-    subtask_metas = list(map(process_job, workload))
+    with Pool(num_proc) as pool:
+        subtask_metas = list(pool.imap(process_job, workload))
+        pool.close()
+        pool.join()
+
 
     if use_orderring:
         order = pd.read_csv(orderring_file)
@@ -99,6 +108,19 @@ def experiment_1(NUM_INSTANCES=25000):
     uniform.create_mixture()
     uniform.dump_mixture(f"{uniform.mixture_name}.json")
 
+def experiment_1_1(NUM_INSTANCES=25000):
+    subtasks_list, subtask_metas = load_general_tasks()
+    uniform = GlobalUniform(
+        subtasks_list,
+        subtask_metas,
+        NUM_INSTANCES,
+        "artifacts/final-submixtures/25K-random-t0-flan2021-cot-tulu-sglue",
+    )
+
+    uniform.create_mixture()
+    uniform.dump_mixture(f"{uniform.mixture_name}.json")
+
+
 
 """
 Experiment 2
@@ -109,24 +131,31 @@ Experiment 2
 
 
 def experiment_2(
-    sim_npy="artifacts/similarity-matrix/2epochs-t0-flan2021-cot.npy",
+    sim_npy="artifacts/similarity-matrix/3epochs-t0-flan2021-cot-tulu-sglue.npy",
     NUM_INSTANCES=25000,
 ):
-    subtasks_list, subtask_metas = load_general_tasks()
+    #subtasks_list, subtask_metas = load_general_tasks()
 
     # Load PMI Matrix
     S = np.load(sim_npy)
 
     quad_cvx = QuadraticConvexOptimization(S)
-    task_prob = quad_cvx.compute_task_probability(10.0, 15.0)
+    task_prob = quad_cvx.closed_form_task_probs(beta=20, lambda_=10, use_laplace=False)
+    print(np.sum(task_prob))
+    print(np.count_nonzero(task_prob))
+    plot_prob_dist(task_prob, 'test.png')
 
+    return       
     multinomial = Multinomial(
         subtasks_list,
         subtask_metas,
         NUM_INSTANCES,
-        "artifacts/final-submixtures/25K-closed-form-multinomial-to-flan2021-cot",
+        "artifacts/data/25K-closed_proj-1_5-101-to-flan2021-cot-tulu-sglue",
         task_prob=task_prob,
     )
+
+    with open("artifacts/probs/25K-closed_proj-1_5-101-to-flan2021-cot-tulu-sglue.pkl", "wb")  as f:
+        pkl.dump(task_prob, f)
 
     multinomial.create_mixture()
 
@@ -151,7 +180,7 @@ def experiment_3(
     S = np.exp(np.load(sim_npy))
 
     bp = BeliefPropagation(S)
-    task_prob = bp.compute_task_probability(_beta=10.0, _lambda=15.0, T=1000)
+    task_prob = bp.compute_task_probability(_beta=10.0, _lambda=50.0, T=1000)
 
     multinomial = Multinomial(
         subtasks_list,
@@ -181,22 +210,22 @@ def plot_prob_dist(n, filename):
 
 def experiment_4(sim_npy="artifacts/similarity-matrix/3epochs-t0-flan2021-cot-tulu-sglue.npy"):
     S = np.load(sim_npy)
-
-    
+    dim = 1_000_000
+    S = np.random.rand(dim, dim) # or float64 if needed
     # S = (S - np.mean(S) ) / (np.std(S) + 1e-8)
     # S = (S - S.min()) / (S.max() - S.min() + 1e-8)
     S = 0.5 * (S + S.T)
 
-    dim = S.shape[0]
+    #dim = S.shape[0]
     print("Dimension of S is: ",dim)
     bp = QuadraticConvexOptimization(S)
-    n = np.array(bp.closed_form_task_probs(beta=50.0, lambda_=1.0))
+    n = np.array(bp.closed_form_task_probs(beta=10.0, lambda_=500.0))
     print("Variance of n", np.var(n))
     print("Non zero support", np.count_nonzero(n))
     sorted_n = sorted(n)
 
-    
-    
+
+
     print("Max element ",np.where(n == n.max()))
     print("Second Max: ", np.where(n == sorted_n[-2]))
     print("Third Max: ", np.where(n==sorted_n[-3]))
@@ -236,6 +265,7 @@ def experiment_45(sim_npy="artifacts/similarity-matrix/3epochs-t0-flan2021-cot-t
 
     for beta in beta_values:
         for lambda_ in lambda_values:
+            print(beta, lambda_)
             # Instantiate the optimizer and compute probabilities
             bp = QuadraticConvexOptimization(S)
             n = np.array(bp.closed_form_task_probs(beta=beta, lambda_=lambda_))
@@ -255,9 +285,10 @@ def experiment_45(sim_npy="artifacts/similarity-matrix/3epochs-t0-flan2021-cot-t
     plt.ylabel("Probability")
     plt.title("Probability Distributions for Different β and λ Combinations")
     plt.legend(loc="upper right", bbox_to_anchor=(1.3, 1.0))
+    plt.legend()
     plt.grid(axis="y", linestyle="--", alpha=0.7)
     plt.tight_layout()
-    plt.show()
+    plt.savefig("test.png")
     
 """
 def experiment_5(sim_npy="artifacts/similarity-matrix/2epochs-t0-flan2021-cot.npy"):
@@ -276,28 +307,32 @@ def experiment_5(sim_npy="artifacts/similarity-matrix/2epochs-t0-flan2021-cot.np
 
 """
 
-def experiment_5(
+def experiment_5_2(
         sim_npy="artifacts/similarity-matrix/3epochs-t0-flan2021-cot-tulu-sglue.npy",
         orderring_file="artifacts/task-index-maps/3epochs-t0-flan2021-cot-tulu-sglue.csv",
-        cluster_size=10,
-        _beta = 0.25, _lambda = 1.25
+        cluster_size=8,
+        _beta = 0.25, _lambda = 1.25, NUM_INSTANCES=25000, use_sim_mat=False,
+        subtasks_list = None, subtask_metas = None
         ):
-
+    if not subtasks_list or not subtask_metas:
+        subtasks_list, subtask_metas = load_general_tasks()
     task_meta_file = "tasks.pkl"
     task_embs_file = "tasks_embeddings.npy"
     emb_folder_map = {
         "t0" : "artifacts/task_embeddings/t0_embed",
         "flan2021" : "artifacts/task_embeddings/flan2021_embed",
         "cot" : "artifacts/task_embeddings/cot_embed",
+        "tulu" : "artifacts/task_embeddings/tulu_embed",
+        "sglue" : "artifacts/task_embeddings/sglue_embed"
     }
     order = pd.read_csv(orderring_file)
     reverse_map = {}
     for _, row in order.iterrows():
-        subtask = row["Task-Name"][len("result_gpt2-"):]
+        subtask = row["Task-Name"][len("result_gpt2_"):]
         if "t0" in subtask or "flan2021" in subtask or "cot" in subtask:
             subtask = subtask[subtask.index('-')+1:]
-            subtask = subtask[subtask.index('-')+1:]
-            reverse_map[subtask] = int(row['Task-ID'])
+        subtask = subtask[subtask.index('-')+1:]
+        reverse_map[subtask] = int(row['Task-ID'])
 
     S = np.load(sim_npy)
     task_embeddings = [ None ] * S.shape[0]
@@ -307,12 +342,10 @@ def experiment_5(
         with open(os.path.join(emb_folder_map[task], task_meta_file), "rb") as f:
             task_meta = list(pkl.load(f))
 
-        cpy = task_meta
-
         task_embs = np.load(os.path.join(emb_folder_map[task], task_embs_file))
-
-        task_data = []
+ 
         for i, subtask in enumerate(task_meta):
+            print(task, subtask)
             _subtask = re.sub(r'[:/-]', '_',subtask)
             task_embeddings[reverse_map[_subtask]] = task_embs[i]
             embed_size = task_embs[i].shape[0]
@@ -327,19 +360,45 @@ def experiment_5(
     cluster_task_map, cluster_prob = obj.compute_task_probability(task_embeddings=task_embeddings, 
                                  cluster_size=cluster_size,
                                  _beta=_beta,
-                                 _lambda=_lambda)
+                                 _lambda=_lambda, use_sim_mat=use_sim_mat)
+    
+    
     for i, p in enumerate(cluster_prob):
         if len(p) == 0:
             continue
         print(f"Non-Zero in cluster {i} = ", np.count_nonzero(p))
         plot_prob_dist(p, f"cluster_prob_dist_{i}.png")
+    
 
-        
-
-
-            
-
-
+    final_submixture = []
+    submixture_filename = f"artifacts/data/25K-cluster_embed_closed-{cluster_size}-0_25-1_25-multi"
+    pkl_filename = f"artifacts/probs/25K-cluster_embed_closed-{cluster_size}-0_25-1_25-multi"
+    with open(pkl_filename + ".pkl", "wb") as f:
+        pkl.dump(
+            {
+                "cluster_task_map" : cluster_task_map,
+                "cluster_prob" : cluster_prob
+            }, f
+        )
+    for cluster_idx, cluster_task_indices in cluster_task_map.items():
+        task_budget = int(math.ceil(NUM_INSTANCES * ((len(cluster_task_indices)*1.0)  / S.shape[0])))
+        multinomial = Multinomial(
+            [subtasks_list[i] for i in cluster_task_indices],
+            [subtask_metas[i] for i in cluster_task_indices],
+            task_budget,
+            submixture_filename,
+            task_prob=cluster_prob[cluster_idx],
+        )
+        final_submixture.extend(multinomial.create_mixture().train_split)
+    
+    with open(submixture_filename+".json", "w") as f:
+        json.dump(
+            {
+                "train": final_submixture,
+                "validation": [],
+            },
+            f,
+        )
     
 
 if __name__ == "__main__":
