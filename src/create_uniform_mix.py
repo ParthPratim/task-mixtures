@@ -188,12 +188,20 @@ def experiment_4(sim_npy="artifacts/similarity-matrix/3epochs-t0-flan2021-cot-tu
     S = 0.5 * (S + S.T)
 
     dim = S.shape[0]
-    print("DImension of S is: ",dim)
+    print("Dimension of S is: ",dim)
     bp = QuadraticConvexOptimization(S)
-    n = np.array(bp.closed_form_task_probs(beta=dim, lambda_=1.0))
-    print(n)
+    n = np.array(bp.closed_form_task_probs(beta=50.0, lambda_=1.0))
+    print("Variance of n", np.var(n))
+    print("Non zero support", np.count_nonzero(n))
+    sorted_n = sorted(n)
 
+    
+    
+    print("Max element ",np.where(n == n.max()))
+    print("Second Max: ", np.where(n == sorted_n[-2]))
+    print("Third Max: ", np.where(n==sorted_n[-3]))
     # n[n <= 1e-8] = 0
+    
 
     print("Total probability:", np.sum(n))
     print("NZ : ", np.count_nonzero(n))
@@ -205,23 +213,23 @@ def experiment_4(sim_npy="artifacts/similarity-matrix/3epochs-t0-flan2021-cot-tu
     plt.grid(axis="y", linestyle="--", alpha=0.7)
     plt.show()
 
-def experiment_5(sim_npy="artifacts/similarity-matrix/3epochs-t0-flan2021-cot-tulu-sglue.npy"):
+def experiment_45(sim_npy="artifacts/similarity-matrix/3epochs-t0-flan2021-cot-tulu-sglue.npy"):
     S = np.load(sim_npy)
     
     # Ensure S is symmetric
-    #S = 0.5 * (S + S.T)
+    S = 0.5 * (S + S.T)
     dim = S.shape[0]
-
+    #dim = 10
     #np.random.seed(42)
     #S = np.random.rand(dim, dim)  # Random values between 0 and 1
-    S = 0.5 * (S + S.T)  # Ensure symmetry
+    #S = 0.5 * (S + S.T)  # Ensure symmetry
     #S += np.eye(dim)  # Add identity to make it diagonally dominant (PSD)
 
     
     print("Dimension of S is: ", dim)
     # Define expanded ranges for beta and lambda
-    beta_values = [1.0, 5.0, 10.0, 20.0, 50.0, 100, 150 , dim, 500, 1000]
-    lambda_values = [0.1, 0.5, 1.0, 5.0, 10.0, 20.0, 200, 500, 800,1000]
+    beta_values = [1.0, 5.0, 10.0, 20.0, 50.0 , dim]
+    lambda_values = [0.1, 0.5, 20.0, 50 ]
 
 
     plt.figure(figsize=(14, 8))
@@ -231,7 +239,14 @@ def experiment_5(sim_npy="artifacts/similarity-matrix/3epochs-t0-flan2021-cot-tu
             # Instantiate the optimizer and compute probabilities
             bp = QuadraticConvexOptimization(S)
             n = np.array(bp.closed_form_task_probs(beta=beta, lambda_=lambda_))
+            print("Non zero support", np.count_nonzero(n))
+            sorted_n = sorted(n)
             
+            
+            print("Max element ",np.where(n == n.max()))
+            print("Second Max: ", np.where(n == sorted_n[-2]))
+            print("Third Max: ", np.where(n==sorted_n[-3]))
+
             # Plot the probability distribution as a line plot
             plt.plot(range(len(n)), n, label=f"β={beta}, λ={lambda_}")
 
@@ -330,4 +345,4 @@ def experiment_5(
 if __name__ == "__main__":
     mp.set_start_method("spawn")
     # experiment_2()
-    experiment_5()
+    experiment_4()

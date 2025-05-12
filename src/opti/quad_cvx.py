@@ -5,6 +5,34 @@ import numpy as np
 
 from src.opti.base import TaskProbabilityOptimization
 
+import numpy as np
+
+def project_onto_simplex(v):
+    """Project a vector v onto the probability simplex {x >= 0, sum(x) = 1}"""
+    n = len(v)
+    u = np.sort(v)[::-1]
+    cssv = np.cumsum(u) - 1
+    ind = np.arange(n) + 1
+    cond = u - cssv / ind > 0
+    rho = ind[cond][-1]
+    theta = cssv[cond][-1] / rho
+    w = np.maximum(v - theta, 0)
+    return w
+
+def projected_gradient_descent(Q, u, lr=1e-2, max_iter=500, tol=1e-15):
+    """Minimize 0.5 * p^T Q p - u^T p subject to p in the simplex"""
+    n = len(u)
+    p = np.ones(n) / n  # initialize uniformly
+    for it in range(max_iter):
+        grad = Q @ p - u
+        p_next = p - lr * grad
+        p_next = project_onto_simplex(p_next)
+
+        if np.linalg.norm(p_next - p) < tol:
+            break
+        p = p_next
+    return p
+
 
 def check_matrix(S):
     all_positive = np.all(S >= 0)
@@ -60,14 +88,56 @@ class QuadraticConvexOptimization(TaskProbabilityOptimization):
                 print("Matrix is positive semi-definite and symmetric")
                 
             S_pos = S
+            Psi_un = beta * S_pos @ np.ones(n)
+            Psi_pair = lambda_ * S_pos
+
+            # Inverse of pairwise potential
+            Psi_pair_inv = np.linalg.inv(Psi_pair)
+            one = np.ones(n)
+
+            a = one @ (Psi_pair_inv @ Psi_un)
+            b = one @ (Psi_pair_inv @ one)
+            nu = (a - 1) / b
+
+            p_star = Psi_pair_inv @ (Psi_un - nu * one)
+
+            if project_to_simplex:
+                # Project to probability simplex
+                p_star = np.clip(p_star, 0, None)
+                p_star = p_star / p_star.sum()
+
+            return p_star
         else:
             sigma = np.std(S)
             S = np.exp(S / sigma)
             D = np.diag(S.sum(axis=1))
             L = D - S + epsilon * np.eye(n)
-        
+                        # Compute eigenvalues of L
+            eigenvalues = np.linalg.eigvals(L)
+            print("Eigenvalues of the Laplacian L:", eigenvalues)
+
             S_pos = L
 
+            # Unary potential: Psi_un = beta * S * 1 (where 1 is a vector of ones)
+            Psi_un = beta * np.sum(S, axis=1)  # Same as beta * S @ np.ones(n)
+
+            # Pairwise potential: Psi_pair = lambda_ * L
+            Psi_pair = lambda_ * L
+
+            # Compute the closed-form solution for the probability vector p
+            Psi_pair_inv = np.linalg.inv(Psi_pair)  # Inverse of the pairwise potential matrix
+
+            # Calculate the optimal probability vector (bp*)
+            numerator = Psi_pair_inv @ (Psi_un - (Psi_pair_inv @ np.ones(n)) * (np.ones(n).T @ Psi_pair_inv @ Psi_un) / (np.ones(n).T @ Psi_pair_inv @ np.ones(n)))
+            bp_star = (lambda_ / beta) * numerator
+
+            # Ensure that the result is a valid probability vector (should sum to 1)
+            bp_star = bp_star / np.sum(bp_star)
+
+            # Output the optimal probability vector
+            print("Optimal probability vector p*:\n", bp_star)
+            print("Sum of probabilities:", np.sum(bp_star))  # Should be close to 1
+            return bp_star
         # Construct Laplacian L
         #print("S pos", S_pos)
         #sigma = np.std(S)
@@ -81,25 +151,7 @@ class QuadraticConvexOptimization(TaskProbabilityOptimization):
         #print("S1_n:::",S @ np.ones(n))
         
         # Unary and pairwise potentials
-        Psi_un = beta * S_pos @ np.ones(n)
-        Psi_pair = lambda_ * S_pos
 
-        # Inverse of pairwise potential
-        Psi_pair_inv = np.linalg.inv(Psi_pair)
-        one = np.ones(n)
-
-        a = one @ (Psi_pair_inv @ Psi_un)
-        b = one @ (Psi_pair_inv @ one)
-        nu = (a - 1) / b
-
-        p_star = Psi_pair_inv @ (Psi_un - nu * one)
-
-        if project_to_simplex:
-            # Project to probability simplex
-            p_star = np.clip(p_star, 0, None)
-            p_star = p_star / p_star.sum()
-
-        return p_star
 
     def compute_task_probability_single_param(self, _ratio):
         S = self.S
@@ -151,6 +203,19 @@ class QuadraticConvexOptimization(TaskProbabilityOptimization):
         self.task_prob = p.value
         return p.value
 
+    def compute_task_probabilities_proj(self, beta, lambda_, lr=1e-4, max_iter=500):
+        
+        S = self.S
+        n = S.shape[0]
+        row_sum = np.sum(S, axis=1)
+        ratio = beta / lambda_
+        
+        uni_pot = beta * row_sum  # vector u
+        abs_min_e_value = np.abs(np.min(np.linalg.eigvalsh(S)))
+        pair_pot = S + abs_min_e_value * np.eye(n)  # matrix Q
+        pair_pot = lambda_*S
+        task_prob = projected_gradient_descent(pair_pot, uni_pot, lr=lr, max_iter=max_iter)
+        return task_prob
 
 class GraphLaplacianOptimization(TaskProbabilityOptimization):
     def compute_task_probability(self, _beta, _lambda):
