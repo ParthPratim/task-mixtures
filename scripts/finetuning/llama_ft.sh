@@ -36,8 +36,8 @@ run_task() {
         --torch_dtype bfloat16 \
         --max_seq_length 4096 \
         --learning_rate 2e-5 \
-        --per_device_train_batch_size 1 \
-        --per_device_eval_batch_size 1 \
+        --per_device_train_batch_size 8 \
+        --per_device_eval_batch_size 8 \
         --preprocessing_num_workers 12 \
         --seed 23 \
         --num_train_epochs 1 \
