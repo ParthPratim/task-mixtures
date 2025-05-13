@@ -5,7 +5,7 @@ from src.opti.base import TaskProbabilityOptimization
 
 
 class BeliefPropagation(TaskProbabilityOptimization):
-    def compute_task_probability(self, _beta=10.0, _lambda=15.0, mu=2.0, T=500):
+    def compute_task_probability(self, _beta=10.0, _lambda=1000.0, mu=2.0, T=500):
         S = self.S
         n = S.shape[0]
 
@@ -36,6 +36,9 @@ class BeliefPropagation(TaskProbabilityOptimization):
             beliefs[i] = -unary_pot[i] + sum(messages[j, i] for j in range(n) if j != i)
 
         # Project beliefs onto the probability simplex
-        p = softmax(-beliefs)
+
+
+        p = np.clip(-beliefs, 0, None)  # Ensure non-negativity
+        p = p / p.sum()  # Normalize to sum to 1
 
         return p

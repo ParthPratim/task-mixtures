@@ -171,17 +171,17 @@ Experiment 3
 
 
 def experiment_3(
-    sim_npy="artifacts/similarity-matrix/2epochs-t0-flan2021-cot.npy",
+    sim_npy="artifacts/similarity-matrix/3epochs-t0-flan2021-cot-tulu-sglue.npy",
     NUM_INSTANCES=25000,
 ):
-    subtasks_list, subtask_metas = load_general_tasks()
+    #subtasks_list, subtask_metas = load_general_tasks()
 
     # Load PMI Matrix
     S = np.exp(np.load(sim_npy))
 
     bp = BeliefPropagation(S)
-    task_prob = bp.compute_task_probability(_beta=10.0, _lambda=50.0, T=1000)
-
+    task_prob = bp.compute_task_probability(_beta=100, _lambda=10.0, T=1000)
+    """
     multinomial = Multinomial(
         subtasks_list,
         subtask_metas,
@@ -193,6 +193,32 @@ def experiment_3(
     multinomial.create_mixture()
 
     multinomial.dump_mixture(f"{multinomial.mixture_name}.json")
+    """
+    print("Total probability: ", np.sum(task_prob)) 
+    print("Non zero support: ", np.count_nonzero(task_prob))
+    print("Probs", task_prob)
+
+    
+    
+    n= task_prob
+
+    print("Variance of n", np.var(n))
+    #print("Non zero support", np.count_nonzero(n))
+    sorted_n = sorted(n)
+
+
+
+    print("Max element ",np.where(n == n.max()))
+    print("Second Max: ", np.where(n == sorted_n[-2]))
+    print("Third Max: ", np.where(n==sorted_n[-3]))
+    # n[n <= 1e-8] = 0
+    
+    plt.figure(figsize=(8, 4))
+    plt.bar(range(len(n)), n, tick_label=[f"P{i}" for i in range(len(n))])
+    plt.ylabel("Probability")
+    plt.title("Probability Distribution")
+    plt.grid(axis="y", linestyle="--", alpha=0.7)
+    plt.show()
 
 
 """
@@ -404,4 +430,4 @@ def experiment_5_2(
 if __name__ == "__main__":
     mp.set_start_method("spawn")
     # experiment_2()
-    experiment_4()
+    experiment_3()
