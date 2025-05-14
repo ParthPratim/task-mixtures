@@ -55,4 +55,8 @@ python -m src.create_uniform_mix
 python -m src.metrics.pmi
 ```
 
+## JSD Similarity Artifacts
+```bash
+https://1drv.ms/f/c/0c180139dc7c7daa/EhBiTsX77C1DrFJ8PhFbuooB-p5Y8Wf1lt50fsyB8cIrvA?e=sFUpts
+```
 
