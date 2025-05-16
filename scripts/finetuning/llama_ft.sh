@@ -6,9 +6,9 @@ MODEL_NAME_OR_PATH=meta-llama/Llama-2-7b-hf
 #HUB_TOKEN=
 
 #export WANDB_API_KEY=
-HUB_TOKEN=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
+HUB_TOKEN=
 
-export WANDB_API_KEY=74e8368d36e7abf19bc9d56a66e74a7bea1033e5
+export WANDB_API_KEY=
 
 wandb login --cloud --host https://api.wandb.ai --relogin $WANDB_API_KEY
 
